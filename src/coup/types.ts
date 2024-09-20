@@ -292,6 +292,7 @@ export enum COUP_PLAY_STATE_V2 {
     SECONDARY = "secondary",
     SWAP = "swap",
     DISCARD = "discard",
+    DISCARD_ASSASINATE_CHALLENGE = "discard_assasinate_challenge",
     REACTION_TO_BLOCK = "reaction_to_block",
     REACTION_TO_CHALLENGE = "reaction_to_challenge",
     REACTION_TO_BLOCK_CHALLENGE = "reaction_to_block_challenge",

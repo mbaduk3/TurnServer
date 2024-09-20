@@ -1,4 +1,4 @@
-import { Room } from "../turn-based-server/types";
+import { Player, Room } from "../turn-based-server/types";
 import { RoomStore } from "./types";
 
 interface ClientLookupMap {
@@ -55,12 +55,20 @@ export default class DictRoomStore implements RoomStore {
         const room:Room = this.roomStore[key];
         if (room) {
             Object.values(room.players).forEach(player => {
-                player.clients.forEach(clientId => {
-                    delete this.clientLookupMap[clientId];
-                });
+               this.deletePlayer(player); 
             });
         }
         delete this.roomStore[key]; 
+    }
+
+    deletePlayer(player:Player): void {
+        player.clients.forEach(clientId => {
+            delete this.clientLookupMap[clientId];
+        });
+        const room:Room = this.roomStore[player.roomId];
+        if (room) {
+            delete room.players[player.name];
+        }
     }
 
     getClientRoom(clientId: string): Room {
@@ -69,5 +77,15 @@ export default class DictRoomStore implements RoomStore {
 
     getClientPlayerName(clientId: string): string {
         return this.clientLookupMap[clientId].playerName;
+    }
+
+    addClientToPlayer(clientId: string, player: Player): void {
+        player.clients = player.clients.filter(x => x !== clientId);
+        player.clients.push(clientId);
+        const room:Room = this.roomStore[player.roomId];
+        this.clientLookupMap[clientId] = {
+            roomKey: room.key,
+            playerName: player.name,
+        }
     }
 }

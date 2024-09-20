@@ -209,6 +209,7 @@ describe("test coup server functions", () => {
             }
         }
         server.handleMessage(clientIds[1], JSON.stringify(discardMessage));
+        server.handleMessage(clientIds[1], JSON.stringify(discardMessage));
 
         let expectedState = server.roomStore.get(roomKey);
         expectedState = {
@@ -313,15 +314,47 @@ describe("test coup server functions", () => {
         }
         server.handleMessage(clientIds[0], JSON.stringify(revealMessage));
 
-        const discardMessage = {
+        let expectedState = server.roomStore.get(roomKey);
+        expectedState = {
+            ...expectedState,
+            currentPlayerIndex: 0,
+            currentPrimaryActor: expectedState.players["player_0"],
+            currentDiscardingActor: expectedState.players["player_2"],
+            currentState: COUP_PLAY_STATE.WAITING_ON_SECONDARY,
+            currentStateV2: COUP_PLAY_STATE_V2.DISCARD_ASSASINATE_CHALLENGE,
+        }
+        let actualState = server.roomStore.get(roomKey);
+        expect(actualState).toEqual(expectedState);
+
+        const discardMessageA = {
             type: COUP_SECONDARY_ACTION_TYPE.REVEAL,
             details: {
                 card: CARD_TYPES.CONTESSA, 
             }
         }
-        server.handleMessage(clientIds[2], JSON.stringify(discardMessage));
+        server.handleMessage(clientIds[2], JSON.stringify(discardMessageA));
 
-        let expectedState = server.roomStore.get(roomKey);
+        expectedState = server.roomStore.get(roomKey);
+        expectedState = {
+            ...expectedState,
+            currentPlayerIndex: 0,
+            currentPrimaryActor: expectedState.players["player_0"],
+            currentDiscardingActor: expectedState.players["player_1"],
+            currentState: COUP_PLAY_STATE.WAITING_ON_SECONDARY,
+            currentStateV2: COUP_PLAY_STATE_V2.DISCARD,
+        }
+        actualState = server.roomStore.get(roomKey);
+        expect(actualState).toEqual(expectedState);
+
+        const discardMessageB = {
+            type: COUP_SECONDARY_ACTION_TYPE.REVEAL,
+            details: {
+                card: CARD_TYPES.DUKE, 
+            }
+        }
+        server.handleMessage(clientIds[1], JSON.stringify(discardMessageB));
+
+        expectedState = server.roomStore.get(roomKey);
         expectedState = {
             ...expectedState,
             currentPlayerIndex: 1,
@@ -330,7 +363,7 @@ describe("test coup server functions", () => {
             currentStateV2: COUP_PLAY_STATE_V2.PRIMARY,
         }
 
-        const actualState = server.roomStore.get(roomKey);
+        actualState = server.roomStore.get(roomKey);
         expect(actualState).toEqual(expectedState);
         expect(actualState.players["player_0"].coins).toBe(2);
         expect(actualState.players["player_0"].hand.length).toBe(2);
@@ -479,6 +512,7 @@ describe("test coup server functions", () => {
                 card: CARD_TYPES.CAPTAIN,
             }
         }
+        server.handleMessage(clientIds[1], JSON.stringify(revealMessage));
         server.handleMessage(clientIds[1], JSON.stringify(revealMessage));
 
         let expectedState = server.roomStore.get(roomKey);

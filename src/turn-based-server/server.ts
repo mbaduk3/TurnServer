@@ -52,14 +52,15 @@ export default abstract class TurnBasedServer {
 
         const clientRoom = this.roomStore.getClientRoom(clientId);
         if (clientRoom) {
-            const response:ResponseMessage = {
-                type: ResponseType.CREATE_FAILURE,
-                data: {
-                    message: "Already in a room"
-                }
-            }
-            this.clientStore.send(clientId, response);
-            return;
+            // const response:ResponseMessage = {
+            //     type: ResponseType.CREATE_FAILURE,
+            //     data: {
+            //         message: "Already in a room"
+            //     }
+            // }
+            // this.clientStore.send(clientId, response);
+            // return;
+            this.handleLeave(clientId);
         }
 
         const name = createMessage.data.name;
@@ -87,18 +88,20 @@ export default abstract class TurnBasedServer {
 
     protected handleJoin(clientId:string, message:RequestMessage) {
         typia.assert<JoinMessage>(message);
+        console.log(message);
         const joinMessage = message as JoinMessage;
 
         const clientRoom = this.roomStore.getClientRoom(clientId);
         if (clientRoom) {
-            const response:ResponseMessage = {
-                type: ResponseType.JOIN_FAILURE,
-                data: {
-                    message: "Already in a room"
-                }
-            }
-            this.clientStore.send(clientId, response);
-            return;
+            // const response:ResponseMessage = {
+            //     type: ResponseType.JOIN_FAILURE,
+            //     data: {
+            //         message: "Already in a room"
+            //     }
+            // }
+            // this.clientStore.send(clientId, response);
+            // return;
+            this.handleLeave(clientId);
         }
 
         const name = joinMessage.data.name;
@@ -129,6 +132,8 @@ export default abstract class TurnBasedServer {
         const player = room.players[name];
         if (!player) {
             addNewPlayerToRoom(this.roomStore, room.key, name, clientId); 
+        } else {
+            this.roomStore.addClientToPlayer(clientId, player);
         }
 
         const joinResponse:ResponseMessage = {
@@ -182,6 +187,20 @@ export default abstract class TurnBasedServer {
             type: ResponseType.PONG,
         }
         this.clientStore.send(clientId, response);
+    }
+
+    protected handleLeave(clientId:string) {
+        const clientRoom = this.roomStore.getClientRoom(clientId);
+        if (clientRoom) {
+            this.roomStore.deletePlayer(clientRoom.players[this.roomStore.getClientPlayerName(clientId)]);
+        }
+        const roomResponse:ResponseMessage = {
+            type: ResponseType.JOIN_NEW,
+            data: {
+                players: Object.keys(clientRoom.players)
+            }
+        }
+        broadcastToRoom(this.clientStore, this.roomStore, clientRoom.key, roomResponse);
     }
 }
 

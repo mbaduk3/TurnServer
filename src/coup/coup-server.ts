@@ -296,8 +296,10 @@ export default class CoupServer extends TurnBasedServer {
             if (player === room.currentPrimaryActor || 
                 (room.currentBlockingActor && 
                 room.currentChallengingActor && 
-                room.currentDiscardingActor === room.currentChallengingActor)) { // Primary player lost challenge or block-challenge failed
-                incrementTurn(room);
+                room.currentDiscardingActor === room.currentChallengingActor) ||
+                (room.currentPrimaryActor.currentPrimaryAction.type === COUP_PRIMARY_ACTION_TYPE.ASSASINATE &&
+                room.currentStateV2 === COUP_PLAY_STATE_V2.DISCARD)) { // Primary player lost challenge or block-challenge failed or assasination target is discarding
+                incrementTurn(room);    
             } else { // Primary player won challenge
                 this.carryOutPrimaryAction(room.currentPrimaryActor, room, primaryAction);
             }
@@ -327,7 +329,11 @@ export default class CoupServer extends TurnBasedServer {
                 replaceCard(player, room, revealAction.details.card);
                 if (room.currentChallengingActor.hand.length > 0) {
                     room.currentDiscardingActor = room.currentChallengingActor;
-                    room.currentStateV2 = COUP_PLAY_STATE_V2.DISCARD;
+                    if (room.currentPrimaryActor.currentPrimaryAction.type === COUP_PRIMARY_ACTION_TYPE.ASSASINATE) {
+                        room.currentStateV2 = COUP_PLAY_STATE_V2.DISCARD_ASSASINATE_CHALLENGE;
+                    } else {
+                        room.currentStateV2 = COUP_PLAY_STATE_V2.DISCARD;
+                    }
                 }
             } else {
                 // Reveal fails
@@ -408,10 +414,19 @@ export default class CoupServer extends TurnBasedServer {
                 player.coins = player.coins + 3;
                 incrementTurn(room);
                 break;
-            case COUP_PRIMARY_ACTION_TYPE.ASSASINATE:
-                removeRandomCard(room.players[(action as AssasinateAction).details.target], room);
-                incrementTurn(room);
+            case COUP_PRIMARY_ACTION_TYPE.ASSASINATE: {
+                const targetName = (action as AssasinateAction).details.target;
+                const targetPlayer = room.players[targetName];
+                if (targetPlayer.hand.length > 0) {
+                    room.currentDiscardingActor = targetPlayer;
+                    room.currentStateV2 = COUP_PLAY_STATE_V2.DISCARD;
+                } else {
+                    incrementTurn(room);
+                }
+                // removeRandomCard(room.players[(action as AssasinateAction).details.target], room);
+                // incrementTurn(room);
                 break;
+            }
             case COUP_PRIMARY_ACTION_TYPE.STEAL:
                 stealCoins(player, room.players[(action as StealAction).details.target]);
                 incrementTurn(room);
