@@ -143,13 +143,7 @@ describe("test basic turn-based server functions", () => {
         expect(wsServerMock.sendMessageToClient).toHaveBeenNthCalledWith(1, clientId, expectedResponse1);
 
         server.handleMessage(clientId, JSON.stringify(createMessage));
-        const expectedResponse2 = {
-            type: ResponseType.CREATE_FAILURE,
-            data: {
-                message: "Already in a room",
-            }
-        }
-        expect(wsServerMock.sendMessageToClient).toHaveBeenNthCalledWith(2, clientId, expectedResponse2);
+        expect(wsServerMock.sendMessageToClient).toHaveBeenNthCalledWith(2, clientId, expectedResponse1);
     });
 
     test("test join existing room", async () => {
@@ -203,10 +197,7 @@ describe("test basic turn-based server functions", () => {
             }
         }
         const expectedResponse2 = {
-            type: ResponseType.JOIN_FAILURE,
-            data: {
-                message: "Already in a room"
-            }
+            type: ResponseType.JOIN_SUCCESS,
         }
         server.handleMessage(clientId1, JSON.stringify(joinMessage));
         expect(wsServerMock.sendMessageToClient).toHaveBeenNthCalledWith(2, clientId1, expectedResponse2);

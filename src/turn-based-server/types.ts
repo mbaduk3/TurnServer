@@ -8,7 +8,9 @@ export enum RequestType {
     PING = 'ping',
     CREATE = 'create',
     JOIN = 'join',
+    LEAVE = 'leave',
     START = 'start',
+    STATUS = 'status',
     ACTION = 'action',
 }
 
@@ -23,6 +25,8 @@ export enum ResponseType {
     JOIN_SUCCESS = 'joined_room_successfully',
     JOIN_FAILURE = 'failed_to_join_room',
     JOIN_NEW = 'new_player_joined',
+    ROOM_STATUS = 'room_status',
+    NOT_IN_ROOM = 'not_in_room',
     START_SUCCESS = 'started_game_successfully',
     START_FAILURE = 'failed_to_start_game',
     // ACTION_FAILURE = 'failed_to_perform_action',
@@ -68,6 +72,10 @@ export interface JoinMessage extends RequestMessage {
         name: string,
         key: string,
     }
+}
+
+export interface LeaveMessage extends RequestMessage {
+    type: RequestType.LEAVE,
 }
 
 // export interface ActionMessage extends RequestMessage {

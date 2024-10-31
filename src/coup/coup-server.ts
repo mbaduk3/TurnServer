@@ -1,6 +1,8 @@
 import TurnBasedServer from "../turn-based-server/server.ts";
 import {
     RequestMessage,
+    RequestType,
+    ResponseMessage,
     ResponseType,
 } from "../turn-based-server/types.ts";
 import {
@@ -31,7 +33,7 @@ import {
     AcceptAction,
     COUP_PLAY_STATE_V2,
 } from "./types.ts";
-import { shuffle, removeFirst, getRandomInt, isSubset, removeSubset } from "../utils.ts";
+import { shuffle, removeFirst, isSubset, removeSubset } from "../utils.ts";
 import { ClientStore } from "../client-store/types.ts";
 import { RoomStore } from "../room-store/types.ts";
 
@@ -41,19 +43,87 @@ export default class CoupServer extends TurnBasedServer {
         super(clientStore, roomStore);
         this.listeners = {
             ...this.listeners,
-            [COUP_PRIMARY_ACTION_TYPE.INCOME]: this.handleIncome,
-            [COUP_PRIMARY_ACTION_TYPE.COUP]: this.handleCoup,
-            [COUP_PRIMARY_ACTION_TYPE.ASSASINATE]: this.handleAssasinate,
-            [COUP_PRIMARY_ACTION_TYPE.FOREIGN_AID]: this.handleForeignAid,
-            [COUP_PRIMARY_ACTION_TYPE.STEAL]: this.handleSteal,
-            [COUP_PRIMARY_ACTION_TYPE.SWAP]: this.handleSwap,
-            [COUP_PRIMARY_ACTION_TYPE.TAX]: this.handleTax,
-            [COUP_SECONDARY_ACTION_TYPE.BLOCK]: this.handleBlock,
-            [COUP_SECONDARY_ACTION_TYPE.CHALLENGE]: this.handleChallenge,
-            [COUP_SECONDARY_ACTION_TYPE.REVEAL]: this.handleReveal,
-            [COUP_SECONDARY_ACTION_TYPE.SWAP_REVEAL]: this.handleSwapReveal,
-            [COUP_SECONDARY_ACTION_TYPE.ACCEPT]: this.handleAccept,
+            [RequestType.STATUS]: this.handleStatus.bind(this),
+            [RequestType.LEAVE]: this.handleLeave.bind(this),
+            [COUP_PRIMARY_ACTION_TYPE.INCOME]: this.handleIncome.bind(this),
+            [COUP_PRIMARY_ACTION_TYPE.COUP]: this.handleCoup.bind(this),
+            [COUP_PRIMARY_ACTION_TYPE.ASSASINATE]: this.handleAssasinate.bind(this),
+            [COUP_PRIMARY_ACTION_TYPE.FOREIGN_AID]: this.handleForeignAid.bind(this),
+            [COUP_PRIMARY_ACTION_TYPE.STEAL]: this.handleSteal.bind(this),
+            [COUP_PRIMARY_ACTION_TYPE.SWAP]: this.handleSwap.bind(this),
+            [COUP_PRIMARY_ACTION_TYPE.TAX]: this.handleTax.bind(this),
+            [COUP_SECONDARY_ACTION_TYPE.BLOCK]: this.handleBlock.bind(this),
+            [COUP_SECONDARY_ACTION_TYPE.CHALLENGE]: this.handleChallenge.bind(this),
+            [COUP_SECONDARY_ACTION_TYPE.REVEAL]: this.handleReveal.bind(this),
+            [COUP_SECONDARY_ACTION_TYPE.SWAP_REVEAL]: this.handleSwapReveal.bind(this),
+            [COUP_SECONDARY_ACTION_TYPE.ACCEPT]: this.handleAccept.bind(this),
         };
+    }
+
+    handleLeave(clientId: string): void {
+        const [room, player] = this.getCallerData(clientId);
+        super.handleLeave(clientId);
+        if (room && player) {
+            switch (room.currentStateV2) {
+                case COUP_PLAY_STATE_V2.PRIMARY:
+                case COUP_PLAY_STATE_V2.REACTION_TO_CHALLENGE:
+                case COUP_PLAY_STATE_V2.SWAP:
+                    if (room.currentPrimaryActor === player) {
+                        incrementTurn(room, false);
+                    }
+                    break;
+                case COUP_PLAY_STATE_V2.SECONDARY:
+                    if (haveOthersAcceptedExcept(room, [room.currentPrimaryActor, player])) {
+                        this.carryOutPrimaryAction(room.currentPrimaryActor, room, room.currentPrimaryActor.currentPrimaryAction);
+                    }
+                    break;
+                case COUP_PLAY_STATE_V2.REACTION_TO_BLOCK:
+                    if (haveOthersAcceptedExcept(room, [room.currentBlockingActor, player])) {
+                        incrementTurn(room, false);
+                    }
+                    break;
+                case COUP_PLAY_STATE_V2.REACTION_TO_BLOCK_CHALLENGE:
+                    if (room.currentBlockingActor === player) {
+                        this.carryOutPrimaryAction(room.currentPrimaryActor, room, room.currentPrimaryActor.currentPrimaryAction);
+                    }
+                    break;
+                case COUP_PLAY_STATE_V2.DISCARD:
+                case COUP_PLAY_STATE_V2.DISCARD_ASSASINATE_CHALLENGE:
+                    if (room.currentDiscardingActor === player) {
+                        incrementTurn(room, false);
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        broadcastGameState(this.clientStore, room);
+    }
+
+    handleStatus(clientId: string): void {
+        const room = this.roomStore.getClientRoom(clientId);
+        let response:ResponseMessage;
+        if (!room) {
+            response = {
+                type: ResponseType.NOT_IN_ROOM,
+            }
+        } else {
+            if (room.gameStarted) {
+                const coupRoom = room as CoupRoom;
+                const player = coupRoom.players[this.roomStore.getClientPlayerName(clientId)];
+                sendPlayerGameState(this.clientStore, player, coupRoom);
+                return;
+            } else {
+                response = {
+                    type: ResponseType.ROOM_STATUS,
+                    data: {
+                        players: Object.keys(room.players),
+                        started: room.gameStarted,
+                    }
+                } 
+            }
+        }
+        this.clientStore.send(clientId, response);
     }
 
     protected handleStart(clientId: string): void {
@@ -498,7 +568,18 @@ const haveOthersAccepted = (room:CoupRoom, mainPlayer:CoupPlayer) => {
             player.hand.length > 0 && 
             (!player.currentSecondaryAction || player.currentSecondaryAction?.type !== COUP_SECONDARY_ACTION_TYPE.ACCEPT)) {
                 allAccepted = false;
-                console.log(player);
+            }
+    });
+    return allAccepted;
+}
+
+const haveOthersAcceptedExcept = (room:CoupRoom, except:CoupPlayer[]) => {
+    let allAccepted = true;
+    Object.values(room.players).forEach(player => {
+        if (!except.includes(player) && 
+            player.hand.length > 0 && 
+            (!player.currentSecondaryAction || player.currentSecondaryAction?.type !== COUP_SECONDARY_ACTION_TYPE.ACCEPT)) {
+                allAccepted = false;
             }
     });
     return allAccepted;
@@ -574,11 +655,11 @@ const removeCard = (player:CoupPlayer, room:CoupRoom, card:CARD_TYPES) => {
     room.deck.unshift(card);
 }
 
-const removeRandomCard = (player:CoupPlayer, room:CoupRoom) => {
-    if (player.hand.length <= 0) return;
-    const card = player.hand[getRandomInt(0, player.hand.length)];
-    removeCard(player, room, card);
-}
+// const removeRandomCard = (player:CoupPlayer, room:CoupRoom) => {
+//     if (player.hand.length <= 0) return;
+//     const card = player.hand[getRandomInt(0, player.hand.length)];
+//     removeCard(player, room, card);
+// }
 
 const stealCoins = (theif:CoupPlayer, victim:CoupPlayer) => {
     const numCoins = victim.coins >= 2 ? 2 : 1;
@@ -586,7 +667,7 @@ const stealCoins = (theif:CoupPlayer, victim:CoupPlayer) => {
     victim.coins -= numCoins;
 }
 
-const incrementTurn = (room:CoupRoom) => {
+const incrementTurn = (room:CoupRoom, incrementCount:boolean = true) => {
     // Check win condition
     let numPlayersAlive = 0;
     const playersList = Object.values(room.players);
@@ -595,13 +676,9 @@ const incrementTurn = (room:CoupRoom) => {
         player.currentSecondaryAction = null;
         if (player.hand.length > 0) numPlayersAlive++;
     });
-    if (numPlayersAlive <= 1) {
-        console.log("Game is over");
-        return;
-    }
-
+    
     // Increment the primary player
-    room.currentPlayerIndex = (room.currentPlayerIndex + 1) % playersList.length;
+    room.currentPlayerIndex = (room.currentPlayerIndex + (incrementCount ? 1 : 0)) % playersList.length;
     while (playersList[room.currentPlayerIndex].hand.length <= 0) {
         room.currentPlayerIndex = (room.currentPlayerIndex + 1) % playersList.length;
     }
@@ -611,6 +688,10 @@ const incrementTurn = (room:CoupRoom) => {
     room.currentDiscardingActor = null;
     room.currentState = COUP_PLAY_STATE.WAITING_ON_PRIMARY;
     room.currentStateV2 = COUP_PLAY_STATE_V2.PRIMARY;
+    if (numPlayersAlive <= 1) {
+        console.log("Game is over");
+        room.currentStateV2 = COUP_PLAY_STATE_V2.FINISHED;
+    }
 }
 
 const broadcastGameState = (clientStore: ClientStore, room:CoupRoom) => {

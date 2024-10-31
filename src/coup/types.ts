@@ -296,6 +296,7 @@ export enum COUP_PLAY_STATE_V2 {
     REACTION_TO_BLOCK = "reaction_to_block",
     REACTION_TO_CHALLENGE = "reaction_to_challenge",
     REACTION_TO_BLOCK_CHALLENGE = "reaction_to_block_challenge",
+    FINISHED = "finished",
 }
 
 export interface CoupRoom extends Room {

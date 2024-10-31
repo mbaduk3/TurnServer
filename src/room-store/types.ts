@@ -9,4 +9,5 @@ export interface RoomStore {
     getClientRoom(clientId: string): Room;
     getClientPlayerName(clientId: string): string;
     addClientToPlayer(clientId:string, player:Player): void;
+    removeClient(clientId: string): void;
 }

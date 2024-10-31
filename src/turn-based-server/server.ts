@@ -26,7 +26,9 @@ export default abstract class TurnBasedServer {
             [RequestType.PING]: this.handlePing.bind(this),
             [RequestType.CREATE]: this.handleCreate.bind(this),
             [RequestType.JOIN]: this.handleJoin.bind(this),
+            [RequestType.LEAVE]: this.handleLeave.bind(this),
             [RequestType.START]: this.handleStart.bind(this),
+            [RequestType.STATUS]: this.handleStatus.bind(this),
         }
     }
 
@@ -195,12 +197,42 @@ export default abstract class TurnBasedServer {
             this.roomStore.deletePlayer(clientRoom.players[this.roomStore.getClientPlayerName(clientId)]);
         }
         const roomResponse:ResponseMessage = {
-            type: ResponseType.JOIN_NEW,
+            type: ResponseType.ROOM_STATUS,
             data: {
-                players: Object.keys(clientRoom.players)
+                players: Object.keys(clientRoom.players),
+                started: clientRoom.gameStarted,
             }
         }
+        this.roomStore.put(clientRoom);
         broadcastToRoom(this.clientStore, this.roomStore, clientRoom.key, roomResponse);
+
+        const notInRoomResponse:ResponseMessage = {
+            type: ResponseType.NOT_IN_ROOM,
+        }
+        this.clientStore.send(clientId, notInRoomResponse);
+    }
+
+    protected handleStatus(clientId:string) {
+        const clientRoom = this.roomStore.getClientRoom(clientId);
+        let response:ResponseMessage;
+        if (clientRoom) {
+            response = {
+                type: ResponseType.ROOM_STATUS,
+                data: {
+                    players: Object.keys(clientRoom.players),
+                    started: clientRoom.gameStarted,
+                }
+            } 
+        } else {
+            response = {
+                type: ResponseType.NOT_IN_ROOM,
+            }
+        }
+        this.clientStore.send(clientId, response);
+    }
+
+    public handleDisconnect(clientId:string) {
+        this.roomStore.removeClient(clientId); 
     }
 }
 

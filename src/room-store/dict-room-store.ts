@@ -68,6 +68,7 @@ export default class DictRoomStore implements RoomStore {
         const room:Room = this.roomStore[player.roomId];
         if (room) {
             delete room.players[player.name];
+            this.put(room);
         }
     }
 
@@ -76,7 +77,7 @@ export default class DictRoomStore implements RoomStore {
     }
 
     getClientPlayerName(clientId: string): string {
-        return this.clientLookupMap[clientId].playerName;
+        return this.clientLookupMap[clientId]?.playerName;
     }
 
     addClientToPlayer(clientId: string, player: Player): void {
@@ -87,5 +88,23 @@ export default class DictRoomStore implements RoomStore {
             roomKey: room.key,
             playerName: player.name,
         }
+        this.put(room);
+    }
+
+    removeClient(clientId: string):void {
+        const room = this.getClientRoom(clientId);
+        const playerName = this.getClientPlayerName(clientId);
+        if (!room || !playerName) {
+            console.warn(`No room/player found for clientId: ${clientId}`);
+            return;
+        }
+        const player = room.players[playerName];
+        if (!player) {
+            console.warn(`No player found for clientId: ${clientId}`);
+            return;
+        }
+        player.clients = player.clients.filter(id => id != clientId);
+        delete this.clientLookupMap[clientId];
+        this.put(room);
     }
 }

@@ -52,14 +52,19 @@ export default class TurnBasedWebSocketServer extends TurnBasedProtocolServer {
     }
 
     onWsClose(ws: WebSocket, code:number, reason:string, wasClean:boolean) {
+        let id = "unknown-id";
         if ((ws as IdentifiedWebSocket).id) {
-            this.clientStore.delete((ws as IdentifiedWebSocket).id);
+            const idWs = ws as IdentifiedWebSocket;
+            id = idWs.id;
+            this.clientStore.delete(id);
+            this.server.handleDisconnect(id);
+            delete this.webSockets[id];
             delete (ws as PartialIdentitfiedWebSocket).id
         }
         const codeStr = code ? code : 'none';
         const reasonStr = reason ? reason : 'none';
         const cleanStr = wasClean ? 'cleanly' : 'uncleanly';
-        console.log(`Connection ${cleanStr} closed with code ${codeStr} and reason: ${reasonStr}`);
+        console.warn(`Connection to ${id} was ${cleanStr} closed with code ${codeStr} and reason: ${reasonStr}`);
     }
 
     onWsError(error:Event) {

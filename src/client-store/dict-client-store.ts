@@ -28,6 +28,11 @@ export default class DictClientStore implements ClientStore {
     }
 
     send(clientId: string, message: ResponseMessage): void {
+        const client:Client = this.clientStore[clientId];
+        if (!client) {
+            console.error(`client with id ${clientId} was not found in the clientStore`);
+            return;
+        }
         this.clientStore[clientId].protocolServer.sendMessageToClient(clientId, message);
     }
 }
