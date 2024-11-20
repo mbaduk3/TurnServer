@@ -1,5 +1,6 @@
 import TurnBasedServer from "./server";
 import { ClientStore } from "../client-store/types";
+import { DBProxy } from "../db-proxy/types";
 
 /**
  * The type of request sent to the server.

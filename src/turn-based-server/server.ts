@@ -13,15 +13,18 @@ import {
 } from './types.ts';
 import { ClientStore } from '../client-store/types.ts';
 import { RoomStore } from '../room-store/types.ts';
+import { DBProxy } from '../db-proxy/types.ts';
 
 export default abstract class TurnBasedServer {
     protected clientStore:ClientStore;
     protected roomStore:RoomStore;
+    protected dbProxy:DBProxy;
     protected listeners: { [key:string]: HandlerMethod };
 
-    constructor(clientStore:ClientStore, roomStore:RoomStore) {
+    constructor(clientStore:ClientStore, roomStore:RoomStore, dbProxy:DBProxy) {
         this.clientStore = clientStore;
         this.roomStore = roomStore;
+        this.dbProxy = dbProxy;
         this.listeners = {
             [RequestType.PING]: this.handlePing.bind(this),
             [RequestType.CREATE]: this.handleCreate.bind(this),
@@ -39,6 +42,11 @@ export default abstract class TurnBasedServer {
             const handlerMethod = this.listeners[obj.type];
             if (!handlerMethod) throw new Error("No handler for message type: " + obj.type);
             handlerMethod(clientId, obj);
+
+            const clientRoom = this.roomStore.getClientRoom(clientId);
+            if (clientRoom && obj.type != RequestType.STATUS) {
+                this.dbProxy.recordAction(clientRoom.key, obj);
+            }
         } catch (error) {
             console.error("Invalid message sent: ", data, error);
             const response:ResponseMessage = {

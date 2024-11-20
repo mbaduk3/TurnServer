@@ -36,11 +36,12 @@ import {
 import { shuffle, removeFirst, isSubset, removeSubset } from "../utils.ts";
 import { ClientStore } from "../client-store/types.ts";
 import { RoomStore } from "../room-store/types.ts";
+import { DBProxy } from "../db-proxy/types.ts";
 
 export default class CoupServer extends TurnBasedServer {
 
-    constructor(clientStore:ClientStore, roomStore:RoomStore) {
-        super(clientStore, roomStore);
+    constructor(clientStore:ClientStore, roomStore:RoomStore, dbProxy:DBProxy) {
+        super(clientStore, roomStore, dbProxy);
         this.listeners = {
             ...this.listeners,
             [RequestType.STATUS]: this.handleStatus.bind(this),
