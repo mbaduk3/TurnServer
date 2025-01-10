@@ -65,9 +65,11 @@ function createAndJoinNPlayers(n, server, protocolServerMock, clientStore) {
   server.handleMessage(clientIds[0], JSON.stringify(createMessage));
 
   const expectedResponse = {
-    type: ResponseType.CREATE_SUCCESS,
+    type: ResponseType.GAME_STATE,
     data: {
-        key: expect.any(String)
+        started: false,
+        key: expect.any(String),
+        players: ["player_0"],
     }
   }
   expect(protocolServerMock.sendMessageToClient).toHaveBeenCalledWith(clientIds[0], expectedResponse);
@@ -85,22 +87,29 @@ function createAndJoinNPlayers(n, server, protocolServerMock, clientStore) {
       }
     }
     server.handleMessage(clientIds[i], JSON.stringify(joinMessage));
-    const expectedResponseA = {
-        type: ResponseType.JOIN_SUCCESS,
-    }
-    expect(protocolServerMock.sendMessageToClient).toHaveBeenNthCalledWith(calledCounter++, clientIds[i], expectedResponseA);
     clientsSoFar.push(`someId_${i}`);
     playersSoFar.push(`player_${i}`);
-
-    const expectedResponseB = {
-      type: ResponseType.JOIN_NEW,
-      data: {
-          players: playersSoFar,
+    for (let j = 0; j <= i; j++) {
+      const expectedResponseA = {
+        type: ResponseType.GAME_STATE,
+        data: {
+          started: false,
+          key: expect.any(String),
+          players: playersSoFar, 
+        }
       }
+      expect(protocolServerMock.sendMessageToClient).toHaveBeenNthCalledWith(calledCounter++, clientIds[j], expectedResponseA);
     }
-    clientsSoFar.forEach(clientId => {
-      expect(protocolServerMock.sendMessageToClient).toHaveBeenNthCalledWith(calledCounter++, clientId, expectedResponseB);
-    });
+
+    // const expectedResponseB = {
+    //   type: ResponseType.JOIN_NEW,
+    //   data: {
+    //       players: playersSoFar,
+    //   }
+    // }
+    // clientsSoFar.forEach(clientId => {
+    //   expect(protocolServerMock.sendMessageToClient).toHaveBeenNthCalledWith(calledCounter++, clientId, expectedResponseB);
+    // });
 
   }
   return [clientIds, calledCounter, roomKey];

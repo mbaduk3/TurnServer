@@ -73,7 +73,9 @@ export default class DictRoomStore implements RoomStore {
     }
 
     getClientRoom(clientId: string): Room {
-        return this.roomStore[this.clientLookupMap[clientId]?.roomKey];
+        const roomKey = this.clientLookupMap[clientId]?.roomKey;
+        if (!roomKey) return undefined;
+        return this.roomStore[roomKey];
     }
 
     getClientPlayerName(clientId: string): string {

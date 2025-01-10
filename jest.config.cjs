@@ -10,8 +10,8 @@ module.exports = {
     "default",
     ["./node_modules/jest-html-reporter", {
       pageTitle: "Test Report",
-      // includeConsoleLog: true,
-      includeConsoleLog: false,
+      includeConsoleLog: true,
+      // includeConsoleLog: false,
       includeFailureMsg: true,
       // includeFailureMsg: false,
     }],

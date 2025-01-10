@@ -64,7 +64,7 @@ export default class TurnBasedWebSocketServer extends TurnBasedProtocolServer {
         const codeStr = code ? code : 'none';
         const reasonStr = reason ? reason : 'none';
         const cleanStr = wasClean ? 'cleanly' : 'uncleanly';
-        console.warn(`Connection to ${id} was ${cleanStr} closed with code ${codeStr} and reason: ${reasonStr}`);
+        console.log(`Connection to ${id} was ${cleanStr} closed with code ${codeStr} and reason: ${reasonStr}`);
     }
 
     onWsError(error:Event) {

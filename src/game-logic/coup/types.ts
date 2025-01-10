@@ -6,7 +6,7 @@ import {
     // Actiondata,
     Client,
     RequestMessage,
-} from "../turn-based-server/types.ts";
+} from "../../turn-based-server/types.ts";
 
 /**
  * The types of the cards
@@ -255,6 +255,7 @@ export type CoupStateData = {
  */
 export enum COUP_RESPONSE_TYPE {
     GAME_STATE = "game_state",
+    GAME_DIFF = "game_diff",
 }
 
 /**

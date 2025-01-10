@@ -60,7 +60,8 @@ describe("test basic ws server function", () => {
         await waitForSocketState(client, client.OPEN);
         client.close();
         await waitForSocketState(client, client.CLOSED);
-        expect(logSpy.mock.calls[2][0]).toBe("Connection uncleanly closed with code 1005 and reason: ");
+        expect(logSpy.mock.calls[2][0]).toEqual(
+            expect.stringContaining("closed with code 1005 and reason:"));
     });
 
     test("send simple json message", async () => {

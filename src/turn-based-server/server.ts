@@ -10,28 +10,34 @@ import {
     CreateMessage,
     JoinMessage,
     HandlerMethod,
+    HandlerResponse,
+    GameActionHandlerResponse,
 } from './types.ts';
 import { ClientStore } from '../client-store/types.ts';
 import { RoomStore } from '../room-store/types.ts';
 import { DBProxy } from '../db-proxy/types.ts';
+import { GameLogicServer } from '../game-logic/types.ts';
+import { getRoomStateBroadcast, getRoomStateMessage, transformPlayerMessagesToClient } from './utils.ts';
 
-export default abstract class TurnBasedServer {
+export default class TurnBasedServer {
     protected clientStore:ClientStore;
-    protected roomStore:RoomStore;
-    protected dbProxy:DBProxy;
     protected listeners: { [key:string]: HandlerMethod };
+    private gameLogicServer: GameLogicServer;
+    private roomStore:RoomStore;
+    private dbProxy:DBProxy;
 
-    constructor(clientStore:ClientStore, roomStore:RoomStore, dbProxy:DBProxy) {
+    constructor(clientStore:ClientStore, roomStore:RoomStore, dbProxy:DBProxy, gameLogicServer:GameLogicServer) {
+        this.gameLogicServer = gameLogicServer;
         this.clientStore = clientStore;
         this.roomStore = roomStore;
         this.dbProxy = dbProxy;
         this.listeners = {
             [RequestType.PING]: this.handlePing.bind(this),
+            [RequestType.STATUS]: this.handleStatus.bind(this),
             [RequestType.CREATE]: this.handleCreate.bind(this),
             [RequestType.JOIN]: this.handleJoin.bind(this),
-            [RequestType.LEAVE]: this.handleLeave.bind(this),
             [RequestType.START]: this.handleStart.bind(this),
-            [RequestType.STATUS]: this.handleStatus.bind(this),
+            [RequestType.LEAVE]: this.handleLeave.bind(this),
         }
     }
 
@@ -39,14 +45,7 @@ export default abstract class TurnBasedServer {
         if (!this.clientStore.has(clientId)) throw new Error("Unknown client");
         try {
             const obj:RequestMessage = typia.json.assertParse<RequestMessage>(data);
-            const handlerMethod = this.listeners[obj.type];
-            if (!handlerMethod) throw new Error("No handler for message type: " + obj.type);
-            handlerMethod(clientId, obj);
-
-            const clientRoom = this.roomStore.getClientRoom(clientId);
-            if (clientRoom && obj.type != RequestType.STATUS) {
-                this.dbProxy.recordAction(clientRoom.key, obj);
-            }
+            this.handleParsedMessage(clientId, obj);
         } catch (error) {
             console.error("Invalid message sent: ", data, error);
             const response:ResponseMessage = {
@@ -56,21 +55,96 @@ export default abstract class TurnBasedServer {
         }
     }
 
-    protected handleCreate(clientId:string, message:RequestMessage) {
+    private handleParsedMessage(clientId: string, obj: RequestMessage) {
+        const handlerMethod = this.listeners[obj.type];
+        const clientRoom = this.roomStore.getClientRoom(clientId);
+        const playerName = this.roomStore.getClientPlayerName(clientId);
+        const handlerResponse = handlerMethod ? handlerMethod(clientId, obj, clientRoom) : this.delegateMessage(obj, clientRoom, playerName);
+
+        if (handlerResponse && handlerResponse.newState) {
+            const newState = handlerResponse.newState;
+            this.roomStore.put(newState);
+            this.dbProxy.recordAction(newState.key, playerName, obj);
+            this.dbProxy.recordState(newState.key, newState);
+        }
+
+        if (handlerResponse && handlerResponse.messages) {
+            handlerResponse.messages.forEach(clientMsg => {
+                this.clientStore.send(clientMsg.clientId, clientMsg.message);
+            });
+        }
+    }
+
+    private delegateMessage(obj: RequestMessage, clientRoom: Room, playerName: string): HandlerResponse {
+        const gameActionResponse: GameActionHandlerResponse | void = this.gameLogicServer.handleMessage(obj, clientRoom, playerName);
+        let clientMessages = null;
+        if (gameActionResponse && gameActionResponse.messages) clientMessages = transformPlayerMessagesToClient(gameActionResponse.messages);
+        const response:HandlerResponse = gameActionResponse ? { newState: gameActionResponse.newState, messages: clientMessages } : null;
+        return response;
+    }
+
+    public handleDisconnect(clientId:string) {
+        this.roomStore.removeClient(clientId); 
+    }
+
+    private handleLeave(clientId:string, _:RequestMessage, room:Room): HandlerResponse {
+        const playerName = this.roomStore.getClientPlayerName(clientId);
+        const response:HandlerResponse = {
+            messages: [],
+        }
+        if (room) {
+            if (room.gameStarted) {
+                const gameResponse = this.gameLogicServer.onPlayerLeft(room, playerName);
+                if (gameResponse && gameResponse.newState) response.newState = gameResponse.newState;
+                if (gameResponse && gameResponse.messages) response.messages = [
+                    ...response.messages,
+                    ...transformPlayerMessagesToClient(gameResponse.messages),
+                ];
+            }
+            this.roomStore.deletePlayer(room.players[this.roomStore.getClientPlayerName(clientId)]);
+        }
+
+        const notInRoomResponse:ResponseMessage = {
+            type: ResponseType.NOT_IN_ROOM,
+        }
+        const msg = {
+            clientId: clientId,
+            message: notInRoomResponse,
+        }
+        response.messages.push(msg);
+
+        return response;
+    }
+
+    private handleStatus(clientId:string, _:RequestMessage, clientRoom: Room): HandlerResponse {
+        let response:ResponseMessage;
+        if (clientRoom) {
+            response = getRoomStateMessage(clientRoom);
+        } else {
+            response = {
+                type: ResponseType.NOT_IN_ROOM,
+            }
+        }
+        const msg = {
+            clientId: clientId,
+            message: response,
+        }
+        return {
+            messages: [msg],
+        }
+    }
+
+    private handleCreate(clientId:string, message:RequestMessage, clientRoom:Room) {
         typia.assert<CreateMessage>(message);
         const createMessage = message as CreateMessage;
+        const handlerResponse:HandlerResponse = {
+            messages: [],
+        };
 
-        const clientRoom = this.roomStore.getClientRoom(clientId);
         if (clientRoom) {
-            // const response:ResponseMessage = {
-            //     type: ResponseType.CREATE_FAILURE,
-            //     data: {
-            //         message: "Already in a room"
-            //     }
-            // }
-            // this.clientStore.send(clientId, response);
-            // return;
-            this.handleLeave(clientId);
+            const response = this.handleLeave(clientId, message, clientRoom);
+            if (response && response.messages) handlerResponse.messages = [...handlerResponse.messages, ...response.messages];
+            if (response && response.newState) handlerResponse.newState = response.newState;
         }
 
         const name = createMessage.data.name;
@@ -83,35 +157,27 @@ export default abstract class TurnBasedServer {
             key: key,
             players: {},
         }
-        this.roomStore.put(room);
+        this.addNewPlayerToRoom(room, name, clientId);
+        const messages = getRoomStateBroadcast(room);
 
-        addNewPlayerToRoom(this.roomStore, room.key, name, clientId);
-
-        const response:ResponseMessage = {
-            type: ResponseType.CREATE_SUCCESS,
-            data: {
-                key: key
-            }
-        }
-        this.clientStore.send(clientId, response);
+        handlerResponse.newState = room;
+        handlerResponse.messages = [...handlerResponse.messages, ...messages];
+        return handlerResponse;
     }
 
-    protected handleJoin(clientId:string, message:RequestMessage) {
+    private handleJoin(clientId:string, message:RequestMessage, clientRoom: Room): HandlerResponse {
         typia.assert<JoinMessage>(message);
-        console.log(message);
         const joinMessage = message as JoinMessage;
 
-        const clientRoom = this.roomStore.getClientRoom(clientId);
         if (clientRoom) {
-            // const response:ResponseMessage = {
-            //     type: ResponseType.JOIN_FAILURE,
-            //     data: {
-            //         message: "Already in a room"
-            //     }
-            // }
-            // this.clientStore.send(clientId, response);
-            // return;
-            this.handleLeave(clientId);
+            const leaveMessage = {
+                type: RequestType.LEAVE,
+            }
+            this.handleParsedMessage(clientId, leaveMessage);
+        }
+
+        const handlerResponse:HandlerResponse = {
+            messages: [],
         }
 
         const name = joinMessage.data.name;
@@ -123,8 +189,11 @@ export default abstract class TurnBasedServer {
                     message: "No key supplied in data"
                 }
             }
-            this.clientStore.send(clientId, response);
-            return;
+            handlerResponse.messages.push({
+                clientId: clientId,
+                message: response,
+            });
+            return handlerResponse;
         }
 
         const room:Room = this.roomStore.get(key);
@@ -135,33 +204,28 @@ export default abstract class TurnBasedServer {
                     message: "Room does not exist"
                 }
             }
-            this.clientStore.send(clientId, response);
-            return;
+            handlerResponse.messages.push({
+                clientId: clientId,
+                message: response,
+            });
+            return handlerResponse;
         }
 
         const player = room.players[name];
         if (!player) {
-            addNewPlayerToRoom(this.roomStore, room.key, name, clientId); 
+            this.addNewPlayerToRoom(room, name, clientId); 
+            handlerResponse.newState = room;
+            handlerResponse.messages = [...handlerResponse.messages, ...getRoomStateBroadcast(room)];
         } else {
             this.roomStore.addClientToPlayer(clientId, player);
         }
-
-        const joinResponse:ResponseMessage = {
-            type: ResponseType.JOIN_SUCCESS,
-        }
-        this.clientStore.send(clientId, joinResponse);
-
-        const roomResponse:ResponseMessage = {
-            type: ResponseType.JOIN_NEW,
-            data: {
-                players: Object.keys(room.players)
-            }
-        }
-        broadcastToRoom(this.clientStore, this.roomStore, room.key, roomResponse);
+        return handlerResponse;
     }
 
-    protected handleStart(clientId:string) {
-        const clientRoom = this.roomStore.getClientRoom(clientId);
+    private handleStart(clientId:string, _:RequestMessage, clientRoom: Room): HandlerResponse {
+        const handlerResponse: HandlerResponse = {
+            messages: [],
+        }
         if (!clientRoom) {
             const response:ResponseMessage = {
                 type: ResponseType.START_FAILURE,
@@ -169,8 +233,11 @@ export default abstract class TurnBasedServer {
                     message: "Not currently in a room"
                 }
             }
-            this.clientStore.send(clientId, response);
-            return;
+            handlerResponse.messages.push({
+                clientId: clientId,
+                message: response,
+            });
+            return handlerResponse;
         }
         
         if (clientRoom.gameStarted) {
@@ -180,67 +247,33 @@ export default abstract class TurnBasedServer {
                     message: "Game already started"
                 }
             }
-            this.clientStore.send(clientId, response);
-            return;
+            handlerResponse.messages.push({
+                clientId: clientId,
+                message: response,
+            });
+            return handlerResponse;
         }
 
+        clientRoom = {...clientRoom, ...this.gameLogicServer.getInitialState(clientRoom)};
         clientRoom.gameStarted = true;
-        const startResponse:ResponseMessage = {
-            type: ResponseType.START_SUCCESS,
-        }
-        this.roomStore.put(clientRoom);
-        this.clientStore.send(clientId, startResponse);
+        handlerResponse.newState = clientRoom;
+        handlerResponse.messages = [...handlerResponse.messages, ...getRoomStateBroadcast(clientRoom)];
+        return handlerResponse;
     }
 
-    protected handlePing(clientId:string) {
+    private handlePing(clientId:string): HandlerResponse {
         const response:ResponseMessage = {
             type: ResponseType.PONG,
         }
-        this.clientStore.send(clientId, response);
+        return {
+            messages: [{ clientId: clientId, message: response }],
+        }
     }
 
-    protected handleLeave(clientId:string) {
-        const clientRoom = this.roomStore.getClientRoom(clientId);
-        if (clientRoom) {
-            this.roomStore.deletePlayer(clientRoom.players[this.roomStore.getClientPlayerName(clientId)]);
-        }
-        const roomResponse:ResponseMessage = {
-            type: ResponseType.ROOM_STATUS,
-            data: {
-                players: Object.keys(clientRoom.players),
-                started: clientRoom.gameStarted,
-            }
-        }
-        this.roomStore.put(clientRoom);
-        broadcastToRoom(this.clientStore, this.roomStore, clientRoom.key, roomResponse);
-
-        const notInRoomResponse:ResponseMessage = {
-            type: ResponseType.NOT_IN_ROOM,
-        }
-        this.clientStore.send(clientId, notInRoomResponse);
-    }
-
-    protected handleStatus(clientId:string) {
-        const clientRoom = this.roomStore.getClientRoom(clientId);
-        let response:ResponseMessage;
-        if (clientRoom) {
-            response = {
-                type: ResponseType.ROOM_STATUS,
-                data: {
-                    players: Object.keys(clientRoom.players),
-                    started: clientRoom.gameStarted,
-                }
-            } 
-        } else {
-            response = {
-                type: ResponseType.NOT_IN_ROOM,
-            }
-        }
-        this.clientStore.send(clientId, response);
-    }
-
-    public handleDisconnect(clientId:string) {
-        this.roomStore.removeClient(clientId); 
+    private addNewPlayerToRoom(room:Room, playerName:string, clientId:string) {
+        const player = createNewPlayer(playerName, room.key, clientId);
+        room.players[playerName] = player;
+        return player;
     }
 }
 
@@ -251,19 +284,4 @@ const createNewPlayer = (name:string, roomId:string, clientId:string):Player => 
         clients: [clientId],
     }
     return player;
-}
-
-const addNewPlayerToRoom = (roomStore:RoomStore, roomId:string, playerName:string, clientId:string) => {
-    const player = createNewPlayer(playerName, roomId, clientId);
-    const room = roomStore.get(roomId);
-    room.players[playerName] = player;
-    roomStore.put(room);
-}
-
-const broadcastToRoom = (clientStore: ClientStore, roomStore: RoomStore, roomKey:string, message:ResponseMessage) => {
-    const room = roomStore.get(roomKey);
-    const players = Object.values(room.players);
-    players.forEach(player => {
-        player.clients.forEach(clientId => clientStore.send(clientId, message));
-    });
 }

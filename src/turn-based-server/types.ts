@@ -1,6 +1,5 @@
 import TurnBasedServer from "./server";
 import { ClientStore } from "../client-store/types";
-import { DBProxy } from "../db-proxy/types";
 
 /**
  * The type of request sent to the server.
@@ -12,7 +11,7 @@ export enum RequestType {
     LEAVE = 'leave',
     START = 'start',
     STATUS = 'status',
-    ACTION = 'action',
+    // ACTION = 'action',
 }
 
 /**
@@ -26,12 +25,12 @@ export enum ResponseType {
     JOIN_SUCCESS = 'joined_room_successfully',
     JOIN_FAILURE = 'failed_to_join_room',
     JOIN_NEW = 'new_player_joined',
-    ROOM_STATUS = 'room_status',
     NOT_IN_ROOM = 'not_in_room',
     START_SUCCESS = 'started_game_successfully',
     START_FAILURE = 'failed_to_start_game',
     // ACTION_FAILURE = 'failed_to_perform_action',
     GAME_ACTION = 'game_action',
+    GAME_STATE = 'game_state',
 }
 
 /**
@@ -58,6 +57,15 @@ export interface RequestMessage {
  */
 export interface ResponseMessage extends TurnBasedMessage {
     type: ResponseType;
+}
+
+export interface GameStateResponse extends ResponseMessage {
+    data: {
+        gameStarted: boolean,
+        key: string,
+        players: string[],
+        state?: object,
+    }
 }
 
 export interface CreateMessage extends RequestMessage {
@@ -88,7 +96,29 @@ export interface LeaveMessage extends RequestMessage {
 //     actionType: string;
 // }
 
-export type HandlerMethod = (clientId: string, message: RequestMessage) => void;
+export type PlayerBoundMessage = {
+    player: Player;
+    message: ResponseMessage;
+}
+
+export type ClientBoundMessage = {
+    clientId: string;
+    message: ResponseMessage;
+}
+
+export type GameActionHandlerResponse = {
+    newState?: Room;
+    messages?: PlayerBoundMessage[];
+}
+
+export type HandlerResponse = {
+    newState?: Room;
+    messages?: ClientBoundMessage[];
+}
+
+export type GameActionHandlerMethod = (message: RequestMessage, room: Room, playerName: string) => GameActionHandlerResponse | void;
+
+export type HandlerMethod = (clientId: string, message: RequestMessage, room: Room) => HandlerResponse | void;
 
 
 /**

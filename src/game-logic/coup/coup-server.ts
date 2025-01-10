@@ -1,17 +1,8 @@
-import TurnBasedServer from "../turn-based-server/server.ts";
-import {
-    RequestMessage,
-    RequestType,
-    ResponseMessage,
-    ResponseType,
-} from "../turn-based-server/types.ts";
 import {
     Deck,
     CARD_TYPES,
     CoupRoom,
     CoupPlayer,
-    GameStateResponse,
-    COUP_RESPONSE_TYPE,
     CoupPlayerStateData,
     COUP_PRIMARY_ACTION_TYPE,
     CoupAction,
@@ -33,19 +24,16 @@ import {
     AcceptAction,
     COUP_PLAY_STATE_V2,
 } from "./types.ts";
-import { shuffle, removeFirst, isSubset, removeSubset } from "../utils.ts";
-import { ClientStore } from "../client-store/types.ts";
-import { RoomStore } from "../room-store/types.ts";
-import { DBProxy } from "../db-proxy/types.ts";
+import { shuffle, removeFirst, isSubset, removeSubset } from "../../utils.ts";
+import { GameLogicServer } from "../types.ts";
+import { GameActionHandlerMethod, GameActionHandlerResponse, PlayerBoundMessage, RequestMessage, ResponseType, Room } from "../../turn-based-server/types.ts";
 
-export default class CoupServer extends TurnBasedServer {
+export default class CoupServer implements GameLogicServer {
 
-    constructor(clientStore:ClientStore, roomStore:RoomStore, dbProxy:DBProxy) {
-        super(clientStore, roomStore, dbProxy);
+    listeners: { [key: string]: GameActionHandlerMethod; };
+
+    constructor() {
         this.listeners = {
-            ...this.listeners,
-            [RequestType.STATUS]: this.handleStatus.bind(this),
-            [RequestType.LEAVE]: this.handleLeave.bind(this),
             [COUP_PRIMARY_ACTION_TYPE.INCOME]: this.handleIncome.bind(this),
             [COUP_PRIMARY_ACTION_TYPE.COUP]: this.handleCoup.bind(this),
             [COUP_PRIMARY_ACTION_TYPE.ASSASINATE]: this.handleAssasinate.bind(this),
@@ -61,76 +49,83 @@ export default class CoupServer extends TurnBasedServer {
         };
     }
 
-    handleLeave(clientId: string): void {
-        const [room, player] = this.getCallerData(clientId);
-        super.handleLeave(clientId);
-        if (room && player) {
-            switch (room.currentStateV2) {
+    handleMessage: GameActionHandlerMethod = (message: RequestMessage, room: Room, playerName: string) => {
+        const handlerMethod = this.listeners[message.type];
+        if (!handlerMethod) throw new Error("Invalid message type");
+        return handlerMethod(message, room, playerName);
+    };
+
+    getStateRepresentation(room: Room): object {
+        const coupRoom = room as CoupRoom
+        const playerStates:{[key: string]: CoupPlayerStateData} = {}; 
+        Object.entries(coupRoom.players).forEach(([n, p]) => {
+            const playerState:CoupPlayerStateData = {
+                name: n,
+                coins: p.coins,
+                cards: p.hand.length,
+                hand: p.hand,
+            };
+            if (p.currentPrimaryAction) playerState.currentPrimaryAction = p.currentPrimaryAction;
+            if (p.currentSecondaryAction) playerState.currentSecondaryAction = p.currentSecondaryAction;
+
+            playerStates[n] = playerState;
+        });
+        return {
+            currentState: coupRoom.currentState,
+            currentStateV2: coupRoom.currentStateV2,
+            currentPrimaryActor: coupRoom.currentPrimaryActor?.name,
+            currentDiscardingActor: coupRoom.currentDiscardingActor?.name,
+            currentBlockingActor: coupRoom.currentBlockingActor?.name,
+            currentChallengingActor: coupRoom.currentChallengingActor?.name,
+            players: playerStates,
+        } 
+    }
+
+    onPlayerLeft(room: Room, playerName: string): GameActionHandlerResponse {
+        const coupRoom = room as CoupRoom;
+        const player = coupRoom.players[playerName];
+        if (coupRoom && player) {
+            switch (coupRoom.currentStateV2) {
                 case COUP_PLAY_STATE_V2.PRIMARY:
                 case COUP_PLAY_STATE_V2.REACTION_TO_CHALLENGE:
                 case COUP_PLAY_STATE_V2.SWAP:
-                    if (room.currentPrimaryActor === player) {
-                        incrementTurn(room, false);
+                    if (coupRoom.currentPrimaryActor === player) {
+                        incrementTurn(coupRoom, false);
                     }
                     break;
                 case COUP_PLAY_STATE_V2.SECONDARY:
-                    if (haveOthersAcceptedExcept(room, [room.currentPrimaryActor, player])) {
-                        this.carryOutPrimaryAction(room.currentPrimaryActor, room, room.currentPrimaryActor.currentPrimaryAction);
+                    if (haveOthersAcceptedExcept(coupRoom, [coupRoom.currentPrimaryActor, player])) {
+                        this.carryOutPrimaryAction(coupRoom.currentPrimaryActor, coupRoom, coupRoom.currentPrimaryActor.currentPrimaryAction);
                     }
                     break;
                 case COUP_PLAY_STATE_V2.REACTION_TO_BLOCK:
-                    if (haveOthersAcceptedExcept(room, [room.currentBlockingActor, player])) {
-                        incrementTurn(room, false);
+                    if (haveOthersAcceptedExcept(coupRoom, [coupRoom.currentBlockingActor, player])) {
+                        incrementTurn(coupRoom, false);
                     }
                     break;
                 case COUP_PLAY_STATE_V2.REACTION_TO_BLOCK_CHALLENGE:
-                    if (room.currentBlockingActor === player) {
-                        this.carryOutPrimaryAction(room.currentPrimaryActor, room, room.currentPrimaryActor.currentPrimaryAction);
+                    if (coupRoom.currentBlockingActor === player) {
+                        this.carryOutPrimaryAction(coupRoom.currentPrimaryActor, coupRoom, coupRoom.currentPrimaryActor.currentPrimaryAction);
                     }
                     break;
                 case COUP_PLAY_STATE_V2.DISCARD:
                 case COUP_PLAY_STATE_V2.DISCARD_ASSASINATE_CHALLENGE:
-                    if (room.currentDiscardingActor === player) {
-                        incrementTurn(room, false);
+                    if (coupRoom.currentDiscardingActor === player) {
+                        incrementTurn(coupRoom, false);
                     }
                     break;
                 default:
                     break;
             }
         }
-        broadcastGameState(this.clientStore, room);
-    }
-
-    handleStatus(clientId: string): void {
-        const room = this.roomStore.getClientRoom(clientId);
-        let response:ResponseMessage;
-        if (!room) {
-            response = {
-                type: ResponseType.NOT_IN_ROOM,
-            }
-        } else {
-            if (room.gameStarted) {
-                const coupRoom = room as CoupRoom;
-                const player = coupRoom.players[this.roomStore.getClientPlayerName(clientId)];
-                sendPlayerGameState(this.clientStore, player, coupRoom);
-                return;
-            } else {
-                response = {
-                    type: ResponseType.ROOM_STATUS,
-                    data: {
-                        players: Object.keys(room.players),
-                        started: room.gameStarted,
-                    }
-                } 
-            }
+        return {
+            newState: coupRoom,
+            messages: getBroadcastMessagesExcept(coupRoom, [playerName]),
         }
-        this.clientStore.send(clientId, response);
     }
 
-    protected handleStart(clientId: string): void {
-        super.handleStart(clientId);
-
-        const coupRoom:CoupRoom = this.roomStore.getClientRoom(clientId) as CoupRoom;
+    public getInitialState(room: Room): CoupRoom {
+        const coupRoom = room as CoupRoom;
 
         // Get a shuffled deck
         coupRoom.deck = getShuffledDeck();
@@ -148,39 +143,35 @@ export default class CoupServer extends TurnBasedServer {
 
         coupRoom.currentState = COUP_PLAY_STATE.WAITING_ON_PRIMARY;
         coupRoom.currentStateV2 = COUP_PLAY_STATE_V2.PRIMARY;
-
-        this.roomStore.put(coupRoom);
-        broadcastGameState(this.clientStore, coupRoom);
+        return coupRoom;
     }
 
-    getCallerData = (clientId:string):[CoupRoom, CoupPlayer] => {
-        const room:CoupRoom = this.roomStore.getClientRoom(clientId) as CoupRoom;
-        const player:CoupPlayer = room.players[this.roomStore.getClientPlayerName(clientId)];
-        return [room, player];
+    getCallerData = (room: Room, playerName: string):[CoupRoom, CoupPlayer] => {
+        const coupRoom = room as CoupRoom;
+        const player = coupRoom.players[playerName];
+        return [coupRoom, player];
     }
+    
+    handleIncome = (message:RequestMessage, room:Room, playerName:string): GameActionHandlerResponse => {
+       const [coupRoom, player] = this.getCallerData(room, playerName); 
 
-    saveAndBroadcastRoom = (room:CoupRoom):void => {
-        this.roomStore.put(room);
-        broadcastGameState(this.clientStore, room);
-    }
-
-    handleIncome = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
-
-        handlePrimaryAction(message, player, room);
+        handlePrimaryAction(message, player, coupRoom);
         const incomeAction = message as IncomeAction;
 
         player.currentPrimaryAction = incomeAction;
-        this.carryOutPrimaryAction(player, room, incomeAction);
+        this.carryOutPrimaryAction(player, coupRoom, incomeAction);
 
-        this.saveAndBroadcastRoom(room);
+        return {
+            newState: coupRoom,
+            messages: getBroadcastMessages(coupRoom),
+        }
     }
 
-    handleCoup = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleCoup = (message:RequestMessage, room:Room, playerName:string): GameActionHandlerResponse => {
+        const [coupRoom, player] = this.getCallerData(room, playerName);
 
-        handlePrimaryAction(message, player, room);
-        handleTargetedAction(message, room);
+        handlePrimaryAction(message, player, coupRoom);
+        handleTargetedAction(message, coupRoom);
 
         const coupAction = message as CoupAction;
 
@@ -188,18 +179,21 @@ export default class CoupServer extends TurnBasedServer {
             throw new Error("Cannot coup with < 7 coins");
         }
         player.coins -= 7;
-        const targetedPlayer = room.players[coupAction.details.target];
+        const targetedPlayer = coupRoom.players[coupAction.details.target];
     
         player.currentPrimaryAction = coupAction;
-        room.currentDiscardingActor = targetedPlayer;
-        room.currentState = COUP_PLAY_STATE.WAITING_ON_SECONDARY;
-        room.currentStateV2 = COUP_PLAY_STATE_V2.DISCARD;
+        coupRoom.currentDiscardingActor = targetedPlayer;
+        coupRoom.currentState = COUP_PLAY_STATE.WAITING_ON_SECONDARY;
+        coupRoom.currentStateV2 = COUP_PLAY_STATE_V2.DISCARD;
     
-        this.saveAndBroadcastRoom(room);
+        return {
+            newState: coupRoom,
+            messages: getBroadcastMessages(coupRoom),
+        }
     }
 
-    handleAssasinate = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleAssasinate = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handlePrimaryAction(message, player, room);
         handleTargetedAction(message, room);
@@ -215,11 +209,14 @@ export default class CoupServer extends TurnBasedServer {
         room.currentState = COUP_PLAY_STATE.WAITING_ON_SECONDARY;
         room.currentStateV2 = COUP_PLAY_STATE_V2.SECONDARY;
     
-        this.saveAndBroadcastRoom(room);
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
+        } 
     }
 
-    handleForeignAid = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleForeignAid = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handlePrimaryAction(message, player, room);
 
@@ -229,11 +226,14 @@ export default class CoupServer extends TurnBasedServer {
         room.currentState = COUP_PLAY_STATE.WAITING_ON_SECONDARY;
         room.currentStateV2 = COUP_PLAY_STATE_V2.SECONDARY;
     
-        this.saveAndBroadcastRoom(room);
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
+        }
     }
 
-    handleSteal = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleSteal = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handlePrimaryAction(message, player, room);
         handleTargetedAction(message, room);
@@ -247,12 +247,14 @@ export default class CoupServer extends TurnBasedServer {
         room.currentState = COUP_PLAY_STATE.WAITING_ON_SECONDARY;
         room.currentStateV2 = COUP_PLAY_STATE_V2.SECONDARY;
     
-        this.roomStore.put(room);
-        broadcastGameState(this.clientStore, room);
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
+        }
     }
 
-    handleSwap = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleSwap = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handlePrimaryAction(message, player, room);
 
@@ -262,11 +264,14 @@ export default class CoupServer extends TurnBasedServer {
         room.currentState = COUP_PLAY_STATE.WAITING_ON_SECONDARY;
         room.currentStateV2 = COUP_PLAY_STATE_V2.SECONDARY;
     
-        this.saveAndBroadcastRoom(room);
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
+        }
     }
 
-    handleTax = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleTax = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handlePrimaryAction(message, player, room);
 
@@ -275,12 +280,15 @@ export default class CoupServer extends TurnBasedServer {
         player.currentPrimaryAction = taxAction;
         room.currentState = COUP_PLAY_STATE.WAITING_ON_SECONDARY;
         room.currentStateV2 = COUP_PLAY_STATE_V2.SECONDARY;
-    
-        this.saveAndBroadcastRoom(room);
+
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
+        }
     }
 
-    handleBlock = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleBlock = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handleSecondaryAction(player, room);
 
@@ -317,11 +325,14 @@ export default class CoupServer extends TurnBasedServer {
             }
         }
 
-        this.saveAndBroadcastRoom(room);
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
+        }
     }
 
-    handleChallenge = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleChallenge = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handleSecondaryAction(player, room);
 
@@ -349,12 +360,15 @@ export default class CoupServer extends TurnBasedServer {
                 player.currentSecondaryAction = null;
             }
         }
-    
-        this.saveAndBroadcastRoom(room);
+
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
+        }
     }
 
-    handleReveal = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleReveal = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handleSecondaryAction(player, room);
 
@@ -415,11 +429,14 @@ export default class CoupServer extends TurnBasedServer {
             throw new Error("Unexpected reveal");
         }
     
-        this.saveAndBroadcastRoom(room);
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
+        }
     }
 
-    handleSwapReveal = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleSwapReveal = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handleSecondaryAction(player, room);
 
@@ -430,7 +447,9 @@ export default class CoupServer extends TurnBasedServer {
             room.currentPrimaryActor.hand.length <= 2) {
             throw new Error("Unexpected swap decision");
         }
-        if (!isSubset(swapDecision.details.cards, room.currentPrimaryActor.hand)) {
+        if (!isSubset(swapDecision.details.cards, room.currentPrimaryActor.hand) ||
+            (room.currentPrimaryActor.hand.length === 3 && swapDecision.details.cards.length !== 1) ||
+            (room.currentPrimaryActor.hand.length === 4 && swapDecision.details.cards.length !== 2)) {
             throw new Error("Invalid swap decision cards");
         }
         const leftOver:CARD_TYPES[] = removeSubset(swapDecision.details.cards, room.currentPrimaryActor.hand) as CARD_TYPES[];
@@ -439,11 +458,14 @@ export default class CoupServer extends TurnBasedServer {
         room.deck = shuffle(room.deck) as Deck;
         incrementTurn(room);
 
-        this.saveAndBroadcastRoom(room);
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
+        }
     }
 
-    handleAccept = (clientId:string, message:RequestMessage):void => {
-        const [room, player] = this.getCallerData(clientId);
+    handleAccept = (message:RequestMessage, rm:Room, playerName:string): GameActionHandlerResponse => {
+        const [room, player] = this.getCallerData(rm, playerName);
 
         handleSecondaryAction(player, room);
 
@@ -454,7 +476,6 @@ export default class CoupServer extends TurnBasedServer {
             if (haveOthersAccepted(room, room.currentBlockingActor)) { // Block goes through
                 incrementTurn(room);
             }
-            this.saveAndBroadcastRoom(room);
         } else if (room.currentPrimaryActor !== player && !room.currentChallengingActor) {
             player.currentSecondaryAction = acceptAction;
             if (haveOthersAccepted(room, room.currentPrimaryActor)) { // Primary goes through
@@ -462,9 +483,13 @@ export default class CoupServer extends TurnBasedServer {
                 const primaryAction = room.currentPrimaryActor.currentPrimaryAction as CoupPrimaryMoveAction;
                 this.carryOutPrimaryAction(room.currentPrimaryActor, room, primaryAction);
             }
-            this.saveAndBroadcastRoom(room);
         } else {
             throw new Error("Unexpected accept");
+        }
+
+        return {
+            newState: room,
+            messages: getBroadcastMessages(room),
         }
     }
 
@@ -494,8 +519,6 @@ export default class CoupServer extends TurnBasedServer {
                 } else {
                     incrementTurn(room);
                 }
-                // removeRandomCard(room.players[(action as AssasinateAction).details.target], room);
-                // incrementTurn(room);
                 break;
             }
             case COUP_PRIMARY_ACTION_TYPE.STEAL:
@@ -509,24 +532,12 @@ export default class CoupServer extends TurnBasedServer {
                     player.hand.push(card);
                 }
                 room.currentStateV2 = COUP_PLAY_STATE_V2.SWAP;
-                sendPlayerGameState(this.clientStore, player, room);
-                this.roomStore.put(room);
+                // sendPlayerGameState(this.clientStore, player, room);
+                // this.updateState(room);
                 break;
         }
     }
 }
-
-// /**
-//  * Handler for the "game_state" request type
-//  * @param client 
-//  */
-// const handleGameState = (client:CoupClient) => {
-//     typia.assert<CoupPlayer>(client.player);
-//     const coupPlayer = client.player as CoupPlayer;
-
-//     sendPlayerGameState(coupPlayer);
-// }
-
 
 const handleAction = (player:CoupPlayer) => {
     if (player.hand.length <= 0) throw new Error("Cannot play with 0 influences");
@@ -695,15 +706,17 @@ const incrementTurn = (room:CoupRoom, incrementCount:boolean = true) => {
     }
 }
 
-const broadcastGameState = (clientStore: ClientStore, room:CoupRoom) => {
-    Object.values(room.players).forEach(player => {
-        sendPlayerGameState(clientStore, player, room);
-    });
+const getBroadcastMessages = (room: CoupRoom): PlayerBoundMessage[] => {
+    return Object.values(room.players).map(p => getBroadcastMessage(room, p));
 }
 
-const sendPlayerGameState = (clientStore: ClientStore, player:CoupPlayer, room:CoupRoom) => {
-    const playerStates:{[key: string]: CoupPlayerStateData} = {}; 
-    Object.entries(room.players).forEach(([n, p]) => {
+const getBroadcastMessagesExcept = (room: CoupRoom, except: string[]): PlayerBoundMessage[] => {
+    const messages = getBroadcastMessages(room);
+    return messages.filter(m => !except.includes(m.player.name));
+}
+
+const getBroadcastMessage = (room: CoupRoom, player: CoupPlayer): PlayerBoundMessage => {
+    const content = Object.entries(room.players).map(([n, p]) => {
         const playerState:CoupPlayerStateData = {
             name: n,
             coins: p.coins,
@@ -712,25 +725,48 @@ const sendPlayerGameState = (clientStore: ClientStore, player:CoupPlayer, room:C
         if (p === player) playerState.hand = p.hand;
         if (p.currentPrimaryAction) playerState.currentPrimaryAction = p.currentPrimaryAction;
         if (p.currentSecondaryAction) playerState.currentSecondaryAction = p.currentSecondaryAction;
-
-        playerStates[n] = playerState;
+        return playerState;
     });
-    const response:GameStateResponse = {
-        type: ResponseType.GAME_ACTION,
-        data: {
-            respType: COUP_RESPONSE_TYPE.GAME_STATE,
-            state: {
-                currentState: room.currentState,
-                currentStateV2: room.currentStateV2,
-                currentPrimaryActor: room.currentPrimaryActor?.name,
-                currentDiscardingActor: room.currentDiscardingActor?.name,
-                currentBlockingActor: room.currentBlockingActor?.name,
-                currentChallengingActor: room.currentChallengingActor?.name,
-                players: playerStates,
-            }
+    return {
+        player: player,
+        message: {
+            type: ResponseType.GAME_STATE,
+            data: content,
         }
-    }
-    player.clients.forEach(client => {
-        clientStore.send(client, response);
-    });
+    };
 }
+
+
+// const sendPlayerGameState = (clientStore: ClientStore, player:CoupPlayer, room:CoupRoom) => {
+//     const playerStates:{[key: string]: CoupPlayerStateData} = {}; 
+//     Object.entries(room.players).forEach(([n, p]) => {
+//         const playerState:CoupPlayerStateData = {
+//             name: n,
+//             coins: p.coins,
+//             cards: p.hand.length,
+//         };
+//         if (p === player) playerState.hand = p.hand;
+//         if (p.currentPrimaryAction) playerState.currentPrimaryAction = p.currentPrimaryAction;
+//         if (p.currentSecondaryAction) playerState.currentSecondaryAction = p.currentSecondaryAction;
+
+//         playerStates[n] = playerState;
+//     });
+//     const response:GameStateResponse = {
+//         type: ResponseType.GAME_ACTION,
+//         data: {
+//             respType: COUP_RESPONSE_TYPE.GAME_STATE,
+//             state: {
+//                 currentState: room.currentState,
+//                 currentStateV2: room.currentStateV2,
+//                 currentPrimaryActor: room.currentPrimaryActor?.name,
+//                 currentDiscardingActor: room.currentDiscardingActor?.name,
+//                 currentBlockingActor: room.currentBlockingActor?.name,
+//                 currentChallengingActor: room.currentChallengingActor?.name,
+//                 players: playerStates,
+//             }
+//         }
+//     }
+//     player.clients.forEach(client => {
+//         clientStore.send(client, response);
+//     });
+// }
