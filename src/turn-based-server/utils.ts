@@ -33,9 +33,9 @@ export const getRoomStateMessageForClient = (room: Room, clientId: string): Clie
 
 export const getRoomStateMessage = (room: Room): ResponseMessage => {
     return {
-        type: ResponseType.GAME_STATE,
+        type: ResponseType.ROOM_STATE,
         data: {
-            started: room.gameStarted,
+            started: room.started,
             key: room.key,
             players: Object.keys(room.players),
         }

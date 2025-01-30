@@ -23,6 +23,7 @@ import {
     SwapDecision,
     AcceptAction,
     COUP_PLAY_STATE_V2,
+    GameState,
 } from "./types.ts";
 import { shuffle, removeFirst, isSubset, removeSubset } from "../../utils.ts";
 import { GameLogicServer } from "../types.ts";
@@ -55,7 +56,7 @@ export default class CoupServer implements GameLogicServer {
         return handlerMethod(message, room, playerName);
     };
 
-    getStateRepresentation(room: Room): object {
+    getStateRepresentation(room: Room): GameState {
         const coupRoom = room as CoupRoom
         const playerStates:{[key: string]: CoupPlayerStateData} = {}; 
         Object.entries(coupRoom.players).forEach(([n, p]) => {
@@ -67,7 +68,6 @@ export default class CoupServer implements GameLogicServer {
             };
             if (p.currentPrimaryAction) playerState.currentPrimaryAction = p.currentPrimaryAction;
             if (p.currentSecondaryAction) playerState.currentSecondaryAction = p.currentSecondaryAction;
-
             playerStates[n] = playerState;
         });
         return {
@@ -79,6 +79,14 @@ export default class CoupServer implements GameLogicServer {
             currentChallengingActor: coupRoom.currentChallengingActor?.name,
             players: playerStates,
         } 
+    }
+
+    getStateRepresentationForPlayer(r: Room, playerName: string): GameState {
+        const state = this.getStateRepresentation(r);
+        Object.values(state.players).forEach(p => {
+            if (p.name !== playerName) delete p.hand;
+        });
+        return state;
     }
 
     onPlayerLeft(room: Room, playerName: string): GameActionHandlerResponse {
@@ -124,7 +132,7 @@ export default class CoupServer implements GameLogicServer {
         }
     }
 
-    public getInitialState(room: Room): CoupRoom {
+    initGame(room: Room): CoupRoom {
         const coupRoom = room as CoupRoom;
 
         // Get a shuffled deck
@@ -142,7 +150,8 @@ export default class CoupServer implements GameLogicServer {
         coupRoom.currentChallengingActor = null;
 
         coupRoom.currentState = COUP_PLAY_STATE.WAITING_ON_PRIMARY;
-        coupRoom.currentStateV2 = COUP_PLAY_STATE_V2.PRIMARY;
+        coupRoom.currentStateV2 = COUP_PLAY_STATE_V2.PRIMARY; 
+
         return coupRoom;
     }
 
@@ -716,7 +725,8 @@ const getBroadcastMessagesExcept = (room: CoupRoom, except: string[]): PlayerBou
 }
 
 const getBroadcastMessage = (room: CoupRoom, player: CoupPlayer): PlayerBoundMessage => {
-    const content = Object.entries(room.players).map(([n, p]) => {
+    const playerStates:{[key: string]: CoupPlayerStateData} = {}; 
+    Object.entries(room.players).forEach(([n, p]) => {
         const playerState:CoupPlayerStateData = {
             name: n,
             coins: p.coins,
@@ -725,8 +735,18 @@ const getBroadcastMessage = (room: CoupRoom, player: CoupPlayer): PlayerBoundMes
         if (p === player) playerState.hand = p.hand;
         if (p.currentPrimaryAction) playerState.currentPrimaryAction = p.currentPrimaryAction;
         if (p.currentSecondaryAction) playerState.currentSecondaryAction = p.currentSecondaryAction;
-        return playerState;
+
+        playerStates[n] = playerState;
     });
+    const content = {
+        currentState: room.currentState,
+        currentStateV2: room.currentStateV2,
+        currentPrimaryActor: room.currentPrimaryActor?.name,
+        currentDiscardingActor: room.currentDiscardingActor?.name,
+        currentBlockingActor: room.currentBlockingActor?.name,
+        currentChallengingActor: room.currentChallengingActor?.name,
+        players: playerStates,
+    }
     return {
         player: player,
         message: {

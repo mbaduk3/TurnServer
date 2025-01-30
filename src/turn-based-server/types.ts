@@ -11,7 +11,6 @@ export enum RequestType {
     LEAVE = 'leave',
     START = 'start',
     STATUS = 'status',
-    // ACTION = 'action',
 }
 
 /**
@@ -20,17 +19,11 @@ export enum RequestType {
 export enum ResponseType {
     PONG = 'pong',
     INVALID_MESSAGE = 'message_invalid',
-    CREATE_SUCCESS = 'created_room_successfully',
-    CREATE_FAILURE = 'failed_to_create_room',
-    JOIN_SUCCESS = 'joined_room_successfully',
     JOIN_FAILURE = 'failed_to_join_room',
-    JOIN_NEW = 'new_player_joined',
     NOT_IN_ROOM = 'not_in_room',
-    START_SUCCESS = 'started_game_successfully',
     START_FAILURE = 'failed_to_start_game',
-    // ACTION_FAILURE = 'failed_to_perform_action',
-    GAME_ACTION = 'game_action',
     GAME_STATE = 'game_state',
+    ROOM_STATE = 'room_state',
 }
 
 /**
@@ -61,7 +54,7 @@ export interface ResponseMessage extends TurnBasedMessage {
 
 export interface GameStateResponse extends ResponseMessage {
     data: {
-        gameStarted: boolean,
+        started: boolean,
         key: string,
         players: string[],
         state?: object,
@@ -127,7 +120,7 @@ export type HandlerMethod = (clientId: string, message: RequestMessage, room: Ro
  * Multiple players can be in one room, each must have a unique name.
  */
 export interface Room {
-    gameStarted: boolean;
+    started: boolean;
     key: string;
     players: { [key:string]: Player };
 }

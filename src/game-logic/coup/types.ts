@@ -1,7 +1,7 @@
 import {
     Player,
-    ResponseMessage,
-    ResponseType,
+    // ResponseMessage,
+    // ResponseType,
     Room,
     // Actiondata,
     Client,
@@ -57,6 +57,16 @@ export const blockableActions:COUP_ACTION_TYPE[] = [
     COUP_PRIMARY_ACTION_TYPE.ASSASINATE,
     COUP_PRIMARY_ACTION_TYPE.STEAL,
 ];
+
+export interface GameState {
+    currentState: COUP_PLAY_STATE,
+    currentStateV2: COUP_PLAY_STATE_V2,
+    currentPrimaryActor?: string,
+    currentDiscardingActor?: string,
+    currentBlockingActor?: string,
+    currentChallengingActor?: string,
+    players: { [key: string]: CoupPlayerStateData },
+}
 
 /**
  * Non-action requests sent to the Coup server must be of this type.
@@ -262,23 +272,23 @@ export enum COUP_RESPONSE_TYPE {
  * Responses sent to players from the coup-server must fit this
  * interface.
  */
-export interface CoupResponseMessage extends ResponseMessage {
-    type: ResponseType.GAME_ACTION,
-    data: {
-        respType: COUP_RESPONSE_TYPE;
-    }
-}
+// export interface CoupResponseMessage extends ResponseMessage {
+//     type: ResponseType.GAME_ACTION,
+//     data: {
+//         respType: COUP_RESPONSE_TYPE;
+//     }
+// }
 
 /**
  * Responses sent to players about the current game state must fit
  * this interface.
  */
-export interface GameStateResponse extends CoupResponseMessage {
-    data: {
-        respType: COUP_RESPONSE_TYPE.GAME_STATE,
-        state: CoupStateData,
-    }
-}
+// export interface GameStateResponse extends CoupResponseMessage {
+//     data: {
+//         respType: COUP_RESPONSE_TYPE.GAME_STATE,
+//         state: CoupStateData,
+//     }
+// }
 
 /**
  * Indicates which party the server is currently waiting on a response from.
@@ -313,7 +323,6 @@ export interface CoupRoom extends Room {
 }
 
 export interface CoupPlayer extends Player {
-    // room: CoupRoom;
     hand: Hand;
     coins: number;
     currentPrimaryAction: CoupPrimaryMoveAction | null;

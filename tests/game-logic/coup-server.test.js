@@ -24,7 +24,7 @@ describe("test coup server functions", () => {
         players[`player_${i}`] = getCoupPlayer(i, roomKey);
     }
     const getDefaultState = () => ({
-        gameStarted: true,
+        started: true,
         key: "ABCDE",
         players: players,
         deck: getShuffledDeck(),

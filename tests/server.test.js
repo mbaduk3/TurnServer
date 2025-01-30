@@ -108,7 +108,7 @@ describe("test basic turn-based server functions", () => {
         server.handleMessage(clientId, JSON.stringify(createMessage));
 
         const expectedResponse = {
-            type: ResponseType.GAME_STATE,
+            type: ResponseType.ROOM_STATE,
             data: {
                 key: expect.any(String),
                 players: ["max"],
@@ -145,7 +145,7 @@ describe("test basic turn-based server functions", () => {
         server.handleMessage(clientId, JSON.stringify(createMessage));
 
         const expectedResponse1 = {
-            type: ResponseType.GAME_STATE,
+            type: ResponseType.ROOM_STATE,
             data: {
                 key: expect.any(String),
                 players: ["max"],
@@ -177,7 +177,7 @@ describe("test basic turn-based server functions", () => {
         }
         server.handleMessage(clientId1, JSON.stringify(createMessage));
         const expectedResponse1 = {
-            type: ResponseType.GAME_STATE,
+            type: ResponseType.ROOM_STATE,
             data: {
                 started: false,
                 key: expect.any(String),
@@ -201,7 +201,7 @@ describe("test basic turn-based server functions", () => {
         }
         server.handleMessage(clientId1, JSON.stringify(createMessage));
         const expectedResponse1 = {
-            type: ResponseType.GAME_STATE,
+            type: ResponseType.ROOM_STATE,
             data: {
                 started: false,
                 key: expect.any(String),
@@ -236,7 +236,7 @@ describe("test basic turn-based server functions", () => {
         }
         server.handleMessage(clientId1, JSON.stringify(createMessage));
         const expectedResponse1 = {
-            type: ResponseType.GAME_STATE,
+            type: ResponseType.ROOM_STATE,
             data: {
                 started: false,
                 key: expect.any(String),
@@ -269,7 +269,7 @@ describe("test basic turn-based server functions", () => {
         }
         server.handleMessage(clientId1, JSON.stringify(createMessage));
         const expectedResponse1 = {
-            type: ResponseType.GAME_STATE,
+            type: ResponseType.ROOM_STATE,
             data: {
                 started: false,
                 key: expect.any(String),
@@ -318,7 +318,7 @@ describe("test basic turn-based server functions", () => {
         }
         server.handleMessage(clientIds[0], JSON.stringify(startMessage));
         const expectedResponse4 = {
-            type: ResponseType.GAME_STATE,
+            type: ResponseType.ROOM_STATE,
             data: {
                 started: true,
                 key: expect.any(String),
@@ -357,26 +357,32 @@ describe("test basic turn-based server functions", () => {
         }
         server.handleMessage(clientIds[0], JSON.stringify(startMessage));
         const expectedResponse4 = {
-            type: ResponseType.GAME_STATE,
+            type: ResponseType.ROOM_STATE,
             data: {
                 started: true,
                 key: expect.any(String),
                 players: ["player_0", "player_1"],
-                state: undefined,
             }
         }
         for (let i = 0; i < 2; i++) {
             expect(wsServerMock.sendMessageToClient).toHaveBeenNthCalledWith(calledCounter++, clientIds[i], expectedResponse4);
         }
+        const expectedResponse5 = {
+            type: ResponseType.GAME_STATE,
+            data: undefined,
+        } 
+        for (let i = 0; i < 2; i++) {
+            expect(wsServerMock.sendMessageToClient).toHaveBeenNthCalledWith(calledCounter++, clientIds[i], expectedResponse5); 
+        }
 
         server.handleMessage(clientIds[0], JSON.stringify(startMessage));
-        const expectedResponse5 = {
+        const expectedResponse6 = {
             type: ResponseType.START_FAILURE,
             data: {
                 message: "Game already started",
             }
         }
-        expect(wsServerMock.sendMessageToClient).toHaveBeenNthCalledWith(calledCounter++, clientIds[0], expectedResponse5);
+        expect(wsServerMock.sendMessageToClient).toHaveBeenNthCalledWith(calledCounter++, clientIds[0], expectedResponse6);
     });
 
     test("test action", async () => {
@@ -389,12 +395,11 @@ describe("test basic turn-based server functions", () => {
         }
         server.handleMessage(clientIds[0], JSON.stringify(startMessage));
         const expectedResponse4 = {
-            type: ResponseType.GAME_STATE,
+            type: ResponseType.ROOM_STATE,
             data: {
                 started: true,
                 key: expect.any(String),
                 players: ["player_0", "player_1"],
-                state: undefined,
             }
         }
         for (let i = 0; i < 2; i++) {

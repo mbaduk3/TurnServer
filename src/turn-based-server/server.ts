@@ -12,6 +12,8 @@ import {
     HandlerMethod,
     HandlerResponse,
     GameActionHandlerResponse,
+    ClientBoundMessage,
+    PlayerBoundMessage,
 } from './types.ts';
 import { ClientStore } from '../client-store/types.ts';
 import { RoomStore } from '../room-store/types.ts';
@@ -93,7 +95,7 @@ export default class TurnBasedServer {
             messages: [],
         }
         if (room) {
-            if (room.gameStarted) {
+            if (room.started) {
                 const gameResponse = this.gameLogicServer.onPlayerLeft(room, playerName);
                 if (gameResponse && gameResponse.newState) response.newState = gameResponse.newState;
                 if (gameResponse && gameResponse.messages) response.messages = [
@@ -102,6 +104,9 @@ export default class TurnBasedServer {
                 ];
             }
             this.roomStore.deletePlayer(room.players[this.roomStore.getClientPlayerName(clientId)]);
+            response.newState = response.newState ?? room
+            delete response.newState.players[playerName];
+            response.messages = [...response.messages, ...getRoomStateBroadcast(response.newState)];
         }
 
         const notInRoomResponse:ResponseMessage = {
@@ -117,20 +122,31 @@ export default class TurnBasedServer {
     }
 
     private handleStatus(clientId:string, _:RequestMessage, clientRoom: Room): HandlerResponse {
-        let response:ResponseMessage;
+        const responses:ResponseMessage[] = [];
         if (clientRoom) {
-            response = getRoomStateMessage(clientRoom);
-        } else {
-            response = {
-                type: ResponseType.NOT_IN_ROOM,
+            const playerName = this.roomStore.getClientPlayerName(clientId);
+            responses.push(getRoomStateMessage(clientRoom));
+            if (clientRoom.started) {
+                const gameState = this.gameLogicServer.getStateRepresentationForPlayer(clientRoom, playerName);
+                const gameStateResponse = {
+                    type: ResponseType.GAME_STATE,
+                    data: gameState,
+                }
+                responses.push(gameStateResponse);
             }
+        } else {
+            responses.push({
+                type: ResponseType.NOT_IN_ROOM,
+            });
         }
-        const msg = {
-            clientId: clientId,
-            message: response,
-        }
+        const msgs:ClientBoundMessage[] = responses.map(r => {
+            return {
+                clientId: clientId,
+                message: r,
+            }
+        });
         return {
-            messages: [msg],
+            messages: msgs,
         }
     }
 
@@ -153,7 +169,7 @@ export default class TurnBasedServer {
             key = genKey(5);
         }
         const room:Room = {
-            gameStarted: false,
+            started: false,
             key: key,
             players: {},
         }
@@ -240,7 +256,7 @@ export default class TurnBasedServer {
             return handlerResponse;
         }
         
-        if (clientRoom.gameStarted) {
+        if (clientRoom.started) {
             const response:ResponseMessage = {
                 type: ResponseType.START_FAILURE,
                 data: {
@@ -254,10 +270,23 @@ export default class TurnBasedServer {
             return handlerResponse;
         }
 
-        clientRoom = {...clientRoom, ...this.gameLogicServer.getInitialState(clientRoom)};
-        clientRoom.gameStarted = true;
-        handlerResponse.newState = clientRoom;
-        handlerResponse.messages = [...handlerResponse.messages, ...getRoomStateBroadcast(clientRoom)];
+        clientRoom = {...clientRoom, ...this.gameLogicServer.initGame(clientRoom)}
+        clientRoom.started = true;
+        const gameStates = Object.entries(clientRoom.players).map(e => {
+            const [name, player] = e;
+            const gameState = this.gameLogicServer.getStateRepresentationForPlayer(clientRoom, name);
+            const playerMsg: PlayerBoundMessage = {
+                player: player,
+                message: {
+                    type: ResponseType.GAME_STATE,
+                    data: gameState,
+                }
+            }
+            return playerMsg
+        });
+        const gameStateResponses = transformPlayerMessagesToClient(gameStates);
+        handlerResponse.newState = {...handlerResponse.newState, ...clientRoom};
+        handlerResponse.messages = [...handlerResponse.messages, ...getRoomStateBroadcast(clientRoom), ...gameStateResponses];
         return handlerResponse;
     }
 

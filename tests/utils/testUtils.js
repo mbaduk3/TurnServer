@@ -65,7 +65,7 @@ function createAndJoinNPlayers(n, server, protocolServerMock, clientStore) {
   server.handleMessage(clientIds[0], JSON.stringify(createMessage));
 
   const expectedResponse = {
-    type: ResponseType.GAME_STATE,
+    type: ResponseType.ROOM_STATE,
     data: {
         started: false,
         key: expect.any(String),
@@ -91,7 +91,7 @@ function createAndJoinNPlayers(n, server, protocolServerMock, clientStore) {
     playersSoFar.push(`player_${i}`);
     for (let j = 0; j <= i; j++) {
       const expectedResponseA = {
-        type: ResponseType.GAME_STATE,
+        type: ResponseType.ROOM_STATE,
         data: {
           started: false,
           key: expect.any(String),
