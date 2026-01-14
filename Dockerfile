@@ -4,7 +4,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
 COPY tsconfig.json ./
 COPY babel.config.cjs ./
 COPY jest.config.cjs ./
@@ -25,7 +25,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
 COPY tsconfig.json ./
 COPY babel.config.cjs ./
 
