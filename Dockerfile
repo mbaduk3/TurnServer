@@ -40,9 +40,8 @@ USER nodejs
 # Expose WebSocket port (adjust if your server uses a different port)
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:8080', (r) => {if (r.statusCode !== 404) throw new Error(r.statusCode)})" || exit 1
+# Health check - verify WebSocket port is listening
+HEALTHCHECK CMD node -e "require('net').createConnection({port: 8080, timeout: 2000}, () => process.exit(0)).on('error', () => process.exit(1))"
 
 # Start the server
 CMD ["node", "--loader", "ts-node/esm", "src/index.ts"]
