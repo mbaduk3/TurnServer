@@ -386,6 +386,7 @@ export default class CoupServer implements GameLogicServer {
     
         if (room.currentDiscardingActor && room.currentDiscardingActor === player) {
             // Valid discard reveal
+            room.currentDiscardingActor.currentSecondaryAction = revealAction;
             removeCard(player, room, revealAction.details.card);
             if (player === room.currentPrimaryActor || 
                 (room.currentBlockingActor && 
@@ -403,6 +404,7 @@ export default class CoupServer implements GameLogicServer {
             // Valid block-challenge reveal
             const blockingActor:CoupPlayer = room.currentBlockingActor as CoupPlayer;
             const blockAction:BlockAction = blockingActor.currentSecondaryAction as BlockAction;
+            blockingActor.currentSecondaryAction = revealAction;
             if (isRevealValid(room, primaryAction, revealAction, blockAction)) {
                 // Reveal succeeds
                 replaceCard(blockingActor, room, revealAction.details.card);
@@ -417,6 +419,7 @@ export default class CoupServer implements GameLogicServer {
         } else if (room.currentPrimaryActor === player && 
             room.currentChallengingActor !== null && 
             room.currentBlockingActor === null) {
+            room.currentPrimaryActor.currentSecondaryAction = revealAction;
             // Valid primary-challenge reveal
             if (isRevealValid(room, primaryAction, revealAction)) {
                 // Reveal succeeds
@@ -432,6 +435,7 @@ export default class CoupServer implements GameLogicServer {
             } else {
                 // Reveal fails
                 removeCard(player, room, revealAction.details.card);
+                console.log(player, room);
                 incrementTurn(room);
             }
         } else {
@@ -608,6 +612,7 @@ const haveOthersAcceptedExcept = (room:CoupRoom, except:CoupPlayer[]) => {
 
 const isRevealValid = (room:CoupRoom, primaryAction:CoupPrimaryMoveAction, revealAction:RevealAction, blockAction?:BlockAction):boolean => {
     let validCards:CARD_TYPES[];
+    console.log(primaryAction, revealAction, blockAction);
     switch (primaryAction.type) {
         case COUP_PRIMARY_ACTION_TYPE.ASSASINATE:
             validCards = blockAction ? [CARD_TYPES.CONTESSA] : [CARD_TYPES.ASSASIN];
@@ -671,8 +676,9 @@ const replaceCard = (player:CoupPlayer, room:CoupRoom, card:CARD_TYPES) => {
     player.hand[index] = card;
 }
 
+// TODO: this function doesn't work either
 const removeCard = (player:CoupPlayer, room:CoupRoom, card:CARD_TYPES) => {
-    player.hand = removeFirst(player.hand, card) as CARD_TYPES[];
+    removeFirst(player.hand, card);
     room.deck.unshift(card);
 }
 
@@ -694,7 +700,10 @@ const incrementTurn = (room:CoupRoom, incrementCount:boolean = true) => {
     const playersList = Object.values(room.players);
     playersList.forEach((player) => {
         player.currentPrimaryAction = null;
-        player.currentSecondaryAction = null;
+        // player.currentSecondaryAction = null;
+        if (player.currentSecondaryAction && player.currentSecondaryAction.type != COUP_SECONDARY_ACTION_TYPE.REVEAL) {
+            player.currentSecondaryAction = null;
+        }
         if (player.hand.length > 0) numPlayersAlive++;
     });
     
@@ -755,38 +764,3 @@ const getBroadcastMessage = (room: CoupRoom, player: CoupPlayer): PlayerBoundMes
         }
     };
 }
-
-
-// const sendPlayerGameState = (clientStore: ClientStore, player:CoupPlayer, room:CoupRoom) => {
-//     const playerStates:{[key: string]: CoupPlayerStateData} = {}; 
-//     Object.entries(room.players).forEach(([n, p]) => {
-//         const playerState:CoupPlayerStateData = {
-//             name: n,
-//             coins: p.coins,
-//             cards: p.hand.length,
-//         };
-//         if (p === player) playerState.hand = p.hand;
-//         if (p.currentPrimaryAction) playerState.currentPrimaryAction = p.currentPrimaryAction;
-//         if (p.currentSecondaryAction) playerState.currentSecondaryAction = p.currentSecondaryAction;
-
-//         playerStates[n] = playerState;
-//     });
-//     const response:GameStateResponse = {
-//         type: ResponseType.GAME_ACTION,
-//         data: {
-//             respType: COUP_RESPONSE_TYPE.GAME_STATE,
-//             state: {
-//                 currentState: room.currentState,
-//                 currentStateV2: room.currentStateV2,
-//                 currentPrimaryActor: room.currentPrimaryActor?.name,
-//                 currentDiscardingActor: room.currentDiscardingActor?.name,
-//                 currentBlockingActor: room.currentBlockingActor?.name,
-//                 currentChallengingActor: room.currentChallengingActor?.name,
-//                 players: playerStates,
-//             }
-//         }
-//     }
-//     player.clients.forEach(client => {
-//         clientStore.send(client, response);
-//     });
-// }

@@ -29,7 +29,7 @@ export function shuffle(array:unknown[]) {
 export function removeFirst(src:unknown[], element:unknown) {
   const index = src.indexOf(element);
   if (index === -1) return src;
-  return [...src.slice(0, index), ...src.slice(index + 1)];
+  src.splice(index, 1);
 }
 
 export function getRandomInt(min:number, max:number) {

@@ -1,0 +1,53 @@
+# Build stage
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig.json ./
+COPY babel.config.cjs ./
+COPY jest.config.cjs ./
+
+# Install all dependencies (including dev dependencies for ts-patch and typia)
+RUN npm ci
+
+# Copy source code
+COPY src ./src
+COPY tests ./tests
+
+# Run tests
+RUN npm test
+
+# Production stage
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig.json ./
+COPY babel.config.cjs ./
+
+# Install all dependencies (we need ts-node and ts-patch at runtime for ESM execution)
+RUN npm ci && \
+    npm cache clean --force
+
+# Copy built application from builder
+COPY src ./src
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+USER nodejs
+
+# Expose WebSocket port (adjust if your server uses a different port)
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:8080', (r) => {if (r.statusCode !== 404) throw new Error(r.statusCode)})" || exit 1
+
+# Start the server
+CMD ["node", "--loader", "ts-node/esm", "src/index.ts"]
