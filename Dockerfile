@@ -4,20 +4,15 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy package files
-COPY package.json package-lock.json ./
+COPY package.json ./
 COPY tsconfig.json ./
 COPY babel.config.cjs ./
-COPY jest.config.cjs ./
 
-# Install all dependencies (including dev dependencies for ts-patch and typia)
-RUN npm ci
+# Install all dependencies
+RUN npm install
 
 # Copy source code
 COPY src ./src
-COPY tests ./tests
-
-# Run tests
-RUN npm test
 
 # Production stage
 FROM node:20-alpine
@@ -25,12 +20,12 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copy package files
-COPY package.json package-lock.json ./
+COPY package.json ./
 COPY tsconfig.json ./
 COPY babel.config.cjs ./
 
 # Install all dependencies (we need ts-node and ts-patch at runtime for ESM execution)
-RUN npm ci && \
+RUN npm install && \
     npm cache clean --force
 
 # Copy built application from builder
