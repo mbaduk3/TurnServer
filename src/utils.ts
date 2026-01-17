@@ -40,11 +40,11 @@ export function getRandomInt(min:number, max:number) {
 
 export function isSubset(part:unknown[], whole:unknown[]) {
   let w = [...whole];
-  part.forEach(p => {
+  for (const p of part) {
     const i = w.indexOf(p);
     if (i === -1) return false;
-    w = w.splice(i, 1);
-  });
+    w.splice(i, 1);
+  }
   return true;
 }
 

@@ -386,6 +386,9 @@ export default class CoupServer implements GameLogicServer {
     
         if (room.currentDiscardingActor && room.currentDiscardingActor === player) {
             // Valid discard reveal
+            if (!player.hand.includes(revealAction.details.card)) {
+                throw new Error("Cannot reveal a card that not in your hand");
+            }
             room.currentDiscardingActor.currentSecondaryAction = revealAction;
             removeCard(player, room, revealAction.details.card);
             if (player === room.currentPrimaryActor || 
@@ -402,6 +405,9 @@ export default class CoupServer implements GameLogicServer {
             room.currentChallengingActor && 
             room.currentChallengingActor !== player) {
             // Valid block-challenge reveal
+            if (!player.hand.includes(revealAction.details.card)) {
+                throw new Error("Cannot reveal a card that not in your hand");
+            }
             const blockingActor:CoupPlayer = room.currentBlockingActor as CoupPlayer;
             const blockAction:BlockAction = blockingActor.currentSecondaryAction as BlockAction;
             blockingActor.currentSecondaryAction = revealAction;
@@ -419,8 +425,11 @@ export default class CoupServer implements GameLogicServer {
         } else if (room.currentPrimaryActor === player && 
             room.currentChallengingActor !== null && 
             room.currentBlockingActor === null) {
-            room.currentPrimaryActor.currentSecondaryAction = revealAction;
             // Valid primary-challenge reveal
+            if (!player.hand.includes(revealAction.details.card)) {
+                throw new Error("Cannot reveal a card that not in your hand");
+            }
+            room.currentPrimaryActor.currentSecondaryAction = revealAction;
             if (isRevealValid(room, primaryAction, revealAction)) {
                 // Reveal succeeds
                 replaceCard(player, room, revealAction.details.card);
@@ -484,7 +493,7 @@ export default class CoupServer implements GameLogicServer {
 
         const acceptAction:AcceptAction = message as AcceptAction;
 
-        if (room.currentBlockingActor !== null && !room.currentChallengingActor && room.currentBlockingActor !== player) { // Accepting a block
+        if (room.currentBlockingActor && !room.currentChallengingActor && room.currentBlockingActor !== player) { // Accepting a block
             player.currentSecondaryAction = acceptAction;
             if (haveOthersAccepted(room, room.currentBlockingActor)) { // Block goes through
                 incrementTurn(room);
@@ -492,7 +501,6 @@ export default class CoupServer implements GameLogicServer {
         } else if (room.currentPrimaryActor !== player && !room.currentChallengingActor) {
             player.currentSecondaryAction = acceptAction;
             if (haveOthersAccepted(room, room.currentPrimaryActor)) { // Primary goes through
-                console.log("All have accepted");
                 const primaryAction = room.currentPrimaryActor.currentPrimaryAction as CoupPrimaryMoveAction;
                 this.carryOutPrimaryAction(room.currentPrimaryActor, room, primaryAction);
             }
