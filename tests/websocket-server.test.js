@@ -5,6 +5,7 @@ import DictClientStore from "../src/client-store/dict-client-store";
 import TurnBasedWebSocketServer from "../src/websocket-server";
 import TurnBasedServer from "../src/turn-based-server/server";
 import { ResponseType } from "../src/turn-based-server/types";
+import logger from "../src/logger";
 
 jest.mock("../src/turn-based-server/server");
 
@@ -16,12 +17,12 @@ describe("test basic ws server function", () => {
     let turnBasedServer;
     let webSocketServer;
     let clientStore;
-    let logSpy;
+    let infoSpy;
     let errorSpy;
 
     beforeAll(async () => {
-        logSpy = jest.spyOn(global.console, "log");
-        errorSpy = jest.spyOn(global.console, "error");
+        infoSpy = jest.spyOn(logger, "info");
+        errorSpy = jest.spyOn(logger, "error");
     });
 
     beforeEach(() => {
@@ -30,17 +31,17 @@ describe("test basic ws server function", () => {
         turnBasedServer = new TurnBasedServer();
         webSocketServer = new TurnBasedWebSocketServer(turnBasedServer, httpServer, clientStore);
         TurnBasedServer.mockReset();
-        logSpy = jest.spyOn(global.console, "log");
-        errorSpy = jest.spyOn(global.console, "error");
+        infoSpy.mockClear();
+        errorSpy.mockClear();
     });
 
     afterAll(() => {
         httpServer.close();
+        infoSpy.mockRestore();
+        errorSpy.mockRestore();
     });
 
     afterEach(() => {
-        logSpy.mockRestore();
-        errorSpy.mockRestore();
         httpServer.close();
     });
 
@@ -50,7 +51,7 @@ describe("test basic ws server function", () => {
         client.ping("Hello");
         await waitForSocketState(client, client.CLOSED);
         let [responseMessage] = messages;
-        expect(logSpy.mock.calls[1][0].startsWith("Identified undefined as")).toBeTruthy();
+        expect(infoSpy.mock.calls[1][0]).toContain("Identified undefined as");
         expect(responseMessage).toBe("Hello");
         client.close();
     });
@@ -60,8 +61,7 @@ describe("test basic ws server function", () => {
         await waitForSocketState(client, client.OPEN);
         client.close();
         await waitForSocketState(client, client.CLOSED);
-        expect(logSpy.mock.calls[2][0]).toEqual(
-            expect.stringContaining("closed with code 1005 and reason:"));
+        expect(infoSpy.mock.calls[2][0]).toContain("closed with code 1005 and reason:");
     });
 
     test("send simple json message", async () => {
@@ -69,7 +69,7 @@ describe("test basic ws server function", () => {
         await waitForSocketState(client, client.OPEN);
         client.send(JSON.stringify({key: "value"}));
         await waitForExpect(() => {
-            expect(logSpy.mock.calls[1][0].startsWith("Identified undefined as")).toBeTruthy();
+            expect(infoSpy.mock.calls[1][0]).toContain("Identified undefined as");
         });
         client.close();
         await waitForSocketState(client, client.CLOSED);
@@ -81,19 +81,20 @@ describe("test basic ws server function", () => {
         }
         webSocketServer.sendMessageToClient("fake-client", message);
         await waitForExpect(() => {
-            expect(errorSpy.mock.calls[0][0]).toBe("Could not send message to fake-client; client not found");
+            expect(errorSpy.mock.calls[0][0]).toContain("Could not send message to fake-client; client not found");
         });
     });
 
     test("send message to client", async () => {
         let [client, messages] = await createSocketClient(PORT, 1);
         await waitForSocketState(client, client.OPEN);
-        expect(logSpy.mock.calls[1][0].startsWith("Identified undefined as")).toBeTruthy();
+        expect(infoSpy.mock.calls[1][0]).toContain("Identified undefined as");
 
         const message = {
             type: ResponseType.CREATE_SUCCESS,
         }
-        const clientId = logSpy.mock.calls[1][0].slice(-36);
+        const logMessage = infoSpy.mock.calls[1][0];
+        const clientId = logMessage.slice(-36);
         webSocketServer.sendMessageToClient(clientId, message);
 
         await waitForSocketState(client, client.CLOSED);

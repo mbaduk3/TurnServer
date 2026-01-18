@@ -1,5 +1,6 @@
 import { Player, Room } from "../turn-based-server/types";
 import { RoomStore } from "./types";
+import logger from "../logger.ts";
 
 interface ClientLookupMap {
     [clientId: string]: {
@@ -97,12 +98,12 @@ export default class DictRoomStore implements RoomStore {
         const room = this.getClientRoom(clientId);
         const playerName = this.getClientPlayerName(clientId);
         if (!room || !playerName) {
-            console.warn(`No room/player found for clientId: ${clientId}`);
+            logger.warn(`No room/player found for clientId: ${clientId}`);
             return;
         }
         const player = room.players[playerName];
         if (!player) {
-            console.warn(`No player found for clientId: ${clientId}`);
+            logger.warn(`No player found for clientId: ${clientId}`);
             return;
         }
         player.clients = player.clients.filter(id => id != clientId);

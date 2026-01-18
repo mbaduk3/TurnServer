@@ -1,5 +1,6 @@
 import typia from 'typia'
 import { genKey } from '../utils.ts';
+import logger from '../logger.ts';
 import {
     RequestType,
     ResponseType,
@@ -49,7 +50,7 @@ export default class TurnBasedServer {
             const obj:RequestMessage = typia.json.assertParse<RequestMessage>(data);
             this.handleParsedMessage(clientId, obj);
         } catch (error) {
-            console.error("Invalid message sent: ", data, error);
+            logger.error("Invalid message sent: ", data, error);
             const response:ResponseMessage = {
                 type: ResponseType.INVALID_MESSAGE,
             }

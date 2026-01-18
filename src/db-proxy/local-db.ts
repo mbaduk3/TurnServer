@@ -1,6 +1,7 @@
 import { DBProxy } from "./types";
 // import { appendFile, readFile } from "node:fs/promises";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import logger from "../logger.ts";
 
 interface DBAction {
     timestamp: number,
@@ -66,7 +67,7 @@ export default class LocalDB implements DBProxy {
 
             writeFileSync(filePath, JSON.stringify(file, null, 2));
         } catch (error) {
-            console.error("Failure to write to local DB", error);
+            logger.error("Failure to write to local DB", error);
         }
     }
 

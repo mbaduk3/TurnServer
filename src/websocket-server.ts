@@ -8,6 +8,7 @@ import {
 } from './turn-based-server/types.ts';
 import TurnBasedServer from './turn-based-server/server.ts';
 import { ClientStore } from './client-store/types.ts';
+import logger from './logger.ts';
 
 interface IdentifiedWebSocket extends WebSocket {
     id: string;
@@ -35,13 +36,13 @@ export default class TurnBasedWebSocketServer extends TurnBasedProtocolServer {
 
         this.webSocketServer.on('connection', (ws: WebSocket) => {
             try {
-                console.log(`New connection: ${ws.url}`);
+                logger.info(`New connection: ${ws.url}`);
                 this.identifyWebSocket(ws);
                 ws.on('message', (data:string) => this.onWsMessage(ws, data));
                 ws.on('close', (code:number, reason:string, wasClean:boolean) => this.onWsClose(ws, code, reason, wasClean));
                 ws.on('error', this.onWsError);
             } catch (error) {
-                console.error("WS-Server error: ", error);
+                logger.error("WS-Server error: ", error);
             }
         });
     }
@@ -64,24 +65,24 @@ export default class TurnBasedWebSocketServer extends TurnBasedProtocolServer {
         const codeStr = code ? code : 'none';
         const reasonStr = reason ? reason : 'none';
         const cleanStr = wasClean ? 'cleanly' : 'uncleanly';
-        console.log(`Connection to ${id} was ${cleanStr} closed with code ${codeStr} and reason: ${reasonStr}`);
+        logger.info(`Connection to ${id} was ${cleanStr} closed with code ${codeStr} and reason: ${reasonStr}`);
     }
 
     onWsError(error:Event) {
-        console.error("An error occured: ");
-        console.error(error);
+        logger.error("An error occured: ");
+        logger.error(error);
     }
 
     public sendMessageToClient(clientId: string, message:ResponseMessage): void {
         const clientWebSocket = this.webSockets[clientId];
         if (!clientWebSocket) {
-            console.error(`Could not send message to ${clientId}; client not found`);
+            logger.error(`Could not send message to ${clientId}; client not found`);
             return;
         }
         try {
             clientWebSocket.send(JSON.stringify(message));
         } catch (error) {
-            console.error(`Could not send message to ${clientId} at ${clientWebSocket.url}`, error);
+            logger.error(`Could not send message to ${clientId} at ${clientWebSocket.url}`, error);
         }
     }
 
@@ -98,6 +99,6 @@ export default class TurnBasedWebSocketServer extends TurnBasedProtocolServer {
         this.clientStore.add(newClient);
         (ws as IdentifiedWebSocket).id = newId;
         this.webSockets[newId] = (ws as IdentifiedWebSocket);
-        console.log(`Identified ${ws.url} as ${newId}`);
+        logger.info(`Identified ${ws.url} as ${newId}`);
     }
 }

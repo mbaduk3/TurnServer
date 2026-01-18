@@ -28,6 +28,7 @@ import {
 import { shuffle, removeFirst, isSubset, removeSubset } from "../../utils.ts";
 import { GameLogicServer } from "../types.ts";
 import { GameActionHandlerMethod, GameActionHandlerResponse, PlayerBoundMessage, RequestMessage, ResponseType, Room } from "../../turn-based-server/types.ts";
+import logger from "../../logger.ts";
 
 export default class CoupServer implements GameLogicServer {
 
@@ -444,7 +445,7 @@ export default class CoupServer implements GameLogicServer {
             } else {
                 // Reveal fails
                 removeCard(player, room, revealAction.details.card);
-                console.log(player, room);
+                logger.info(`Player ${player.name} failed reveal`);
                 incrementTurn(room);
             }
         } else {
@@ -620,7 +621,7 @@ const haveOthersAcceptedExcept = (room:CoupRoom, except:CoupPlayer[]) => {
 
 const isRevealValid = (room:CoupRoom, primaryAction:CoupPrimaryMoveAction, revealAction:RevealAction, blockAction?:BlockAction):boolean => {
     let validCards:CARD_TYPES[];
-    console.log(primaryAction, revealAction, blockAction);
+    logger.info(`Validating reveal: ${primaryAction.type}`);
     switch (primaryAction.type) {
         case COUP_PRIMARY_ACTION_TYPE.ASSASINATE:
             validCards = blockAction ? [CARD_TYPES.CONTESSA] : [CARD_TYPES.ASSASIN];
@@ -727,7 +728,7 @@ const incrementTurn = (room:CoupRoom, incrementCount:boolean = true) => {
     room.currentState = COUP_PLAY_STATE.WAITING_ON_PRIMARY;
     room.currentStateV2 = COUP_PLAY_STATE_V2.PRIMARY;
     if (numPlayersAlive <= 1) {
-        console.log("Game is over");
+        logger.info("Game is over");
         room.currentStateV2 = COUP_PLAY_STATE_V2.FINISHED;
     }
 }
